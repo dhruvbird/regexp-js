@@ -103,7 +103,7 @@ SequentialOpsNode.prototype = {
         var nodePair = [new NFANode(), new NFANode()];
         switch (this.op.op) {
         case '*':
-                // Add a self epsilon transition
+            // Add a self epsilon transition
             symNodePair[0].on(symNodePair[1]);
             nodePair[1].on(nodePair[0]);
             nodePair[0].on(symNodePair[0]);
@@ -190,13 +190,21 @@ function SingleChar(ch) {
 }
 SingleChar.prototype = {
     getCharList: function() {
+	if (this.ch == '.') {
+            return _.difference(allChars, [ '.' ]);
+	}
         return [this.ch];
     },
     toNFA: function() {
-        var lhs = new NFANode();
-        var rhs = new NFANode();
-        lhs.on(rhs, this.ch);
-        return [lhs, rhs];
+	var charList = this.getCharList();
+	if (charList.length == 1) {
+            var lhs = new NFANode();
+            var rhs = new NFANode();
+            lhs.on(rhs, this.ch);
+            return [lhs, rhs];
+	} else {
+	    return NFANodeFromCharList(charList);
+	}
     }
 };
 
@@ -221,9 +229,6 @@ EscapedChar.prototype = {
             break;
         case 'S':
             ret = _.difference(allChars, wsChars);
-            break;
-        case '.':
-            ret = _.difference(allChars, [ '.' ]);
             break;
         default:
             ret = [ this.ch ];
@@ -454,7 +459,7 @@ RegExpParser.prototype = {
     },
     singleChar: function() {
 	var nextToken = this.peek();
-	var disallowedTokens = "\\()[]|^";
+	var disallowedTokens = "\\()[]|^$";
 	if (disallowedTokens.indexOf(nextToken) != -1) {
 	    return null;
 	} else {
@@ -481,19 +486,89 @@ function RegExpNFA(expression) {
     this.nfa = null;
 }
 
+function processNode(node, nodeNum) {
+    if (node.id) {
+	return nodeNum;
+    }
+    node.id = nodeNum++;
+    var keys = Object.keys(node.transitions);
+    keys.forEach(function(key) {
+	var nodes = node.transitions[key];
+	nodes.forEach(function(n) {
+	    nodeNum = processNode(n, nodeNum);
+	});
+    });
+    return nodeNum;
+}
+
+function numberNodes(nfa, nodeNum) {
+    var keys;
+    nodeNum = processNode(nfa[0], nodeNum);
+    nodeNum = processNode(nfa[1], nodeNum);
+    return nodeNum;
+}
+
 RegExpNFA.prototype = {
     toNFA: function() {
 	var parsed = this.parser.parse();
         this.nfa = parsed.toNFA();
+	numberNodes(this.nfa, 1);
+	this.nfa[1].isFinal = true;
         return this.nfa;
     }
 };
 
-var expression = "a|(bc)*";
+function searchNFA(str, q, matches) {
+    while (q.length != 0) {
+	var top = q.shift();
+	console.log("Expanding node id:", top.id, "index:", top.index, "isFinal:", top.isFinal);
+	if (top.isFinal) {
+	    if (top.index > -1) {
+		matches.push(top.index);
+	    }
+	}
+	if (top.transitions.hasOwnProperty(epsilon)) {
+	    // Expand the epsilon transition for 'top' and also move
+	    // ahead by the character at str[top.index + 1], but only
+	    // if the node we are going to add isn't already added due
+	    // to an equivalent or larger index.
+	    top.transitions[epsilon].forEach(function(node) {
+		if (!node.hasOwnProperty('index') || node.index < top.index) {
+		    node.index = top.index;
+		    console.log("Adding to Q");
+		    q.push(node);
+		}
+	    });
+	}
+	var index = top.index;
+	if (!(index + 1 < str.length)) {
+	    continue;
+	}
+	console.log(util.format("Checking transitions for char '%s' at index '%d'", str[index+1], index+1));
+	if (top.transitions.hasOwnProperty(str[index + 1])) {
+	    top.transitions[str[index + 1]].forEach(function(node) {
+		if (!node.hasOwnProperty('index') || node.index < index + 1) {
+		    console.log(util.format("Adding to Q on transition: %s", str[index+1]));
+		    node.index = index + 1;
+		    q.push(node);
+		}
+	    });
+	}
+    } // while (q.length != 0)
+}
+
+function search(str, reNFA) {
+    var q = [];
+    var matches = [];
+    reNFA[0].index = -1;
+    q.push(reNFA[0]);
+    searchNFA(str, q, matches);
+    return matches;
+}
+
+var expression = ".*x|(a|(bc))*";
 var r = new RegExpParser(expression);
-// var x = r.parse();
 var nfaGenerator = new RegExpNFA(expression);
 var nfa = nfaGenerator.toNFA();
-var i = 0;
-
-
+var m = search("bwcabcbcbx", nfa);
+console.log(m);
