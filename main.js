@@ -1,3 +1,4 @@
+/* -*- indent-tabs-mode: nil; c-basic-offset: 4; tab-width: 4 -*- */
 var util = require('util');
 var _ = require('underscore');
 
@@ -131,7 +132,7 @@ SequentialOpsNode.prototype = {
 function NFANodeFromCharList(charList) {
     // Handle an empty list
     if (charList.length == 0) {
-	return new EmptyNode().toNFA();
+	    return new EmptyNode().toNFA();
     }
     var node = new SingleChar(charList[0]);
     for (var i = 1; i < charList.length; ++i) {
@@ -194,21 +195,21 @@ function SingleChar(ch) {
 }
 SingleChar.prototype = {
     getCharList: function() {
-	if (this.ch == '.') {
+	    if (this.ch == '.') {
             return _.difference(allChars, [ '.' ]);
-	}
+	    }
         return [this.ch];
     },
     toNFA: function() {
-	var charList = this.getCharList();
-	if (charList.length == 1) {
+	    var charList = this.getCharList();
+	    if (charList.length == 1) {
             var lhs = new NFANode();
             var rhs = new NFANode();
             lhs.on(rhs, this.ch);
             return [lhs, rhs];
-	} else {
-	    return NFANodeFromCharList(charList);
-	}
+	    } else {
+	        return NFANodeFromCharList(charList);
+	    }
     }
 };
 
@@ -258,230 +259,230 @@ NegationNode.prototype = {
 
 RegExpParser.prototype = {
     peek: function() {
-	return this.expression[this.index];
+	    return this.expression[this.index];
     },
     hasMore: function() {
-	return this.index < this.expLen;
+	    return this.index < this.expLen;
     },
     nextIs: function(ch) {
-	return this.hasMore() && this.peek() == ch;
+	    return this.hasMore() && this.peek() == ch;
     },
     get: function() {
-	return this.expression[this.index++];
+	    return this.expression[this.index++];
     },
     parse: function() {
-	this.index = 0;
-	return this.regexp();
+	    this.index = 0;
+	    return this.regexp();
     },
     regexp: function() {
-	var index = this.index;
-	var node = this.regexpNoUnion();
-	if (!node) {
-	    this.index = index;
-	    return null;
-	}
-	if (this.hasMore()) {
-	    if (this.nextIs('|')) {
-		this.get();
-		var node2 = this.regexp();
-		if (!node2) {
-		    this.index = index;
-		    return null;
-		}
-		return new UnionNode(node, node2);
-	    } else {
-		// Maybe bracketed subexpression.
-		return node;
+	    var index = this.index;
+	    var node = this.regexpNoUnion();
+	    if (!node) {
+	        this.index = index;
+	        return null;
 	    }
-	} else {
-	    return node;
-	}
+	    if (this.hasMore()) {
+	        if (this.nextIs('|')) {
+		        this.get();
+		        var node2 = this.regexp();
+		        if (!node2) {
+		            this.index = index;
+		            return null;
+		        }
+		        return new UnionNode(node, node2);
+	        } else {
+		        // Maybe bracketed subexpression.
+		        return node;
+	        }
+	    } else {
+	        return node;
+	    }
     },
     regexpNoUnion: function() {
-	var index = this.index;
-	var node = this.regexpNoConcat();
-	if (!node) {
-	    if (!this.hasMore() || this.nextIs('|')) {
-		return new EmptyNode();
+	    var index = this.index;
+	    var node = this.regexpNoConcat();
+	    if (!node) {
+	        if (!this.hasMore() || this.nextIs('|')) {
+		        return new EmptyNode();
+	        }
+	        this.index = index;
+	        return null;
 	    }
-	    this.index = index;
-	    return null;
-	}
 
-	if (this.hasMore()) {
-	    index = this.index;
-	    var node2 = this.regexpNoUnion();
-	    if (!node2 || node2 instanceof EmptyNode) {
-		return node;
+	    if (this.hasMore()) {
+	        index = this.index;
+	        var node2 = this.regexpNoUnion();
+	        if (!node2 || node2 instanceof EmptyNode) {
+		        return node;
+	        }
+	        return new SequenceNode(node, node2);
+	    } else {
+	        return node;
 	    }
-	    return new SequenceNode(node, node2);
-	} else {
-	    return node;
-	}
     },
     regexpNoConcat: function() {
-	var index = this.index;
-	var node = this.regexpBasic();
-	if (!node) {
-	    this.index = index;
-	    return null;
-	}
+	    var index = this.index;
+	    var node = this.regexpBasic();
+	    if (!node) {
+	        this.index = index;
+	        return null;
+	    }
 
-	var node2 = this.regexpOp();
-	if (!node2) {
-	    // Getting no ops is perfectly okay. We assume it to be a
-	    // single application of 'node'
-	    return node;
-	}
-	return new ApplyOpsNode(node, node2);
+	    var node2 = this.regexpOp();
+	    if (!node2) {
+	        // Getting no ops is perfectly okay. We assume it to be a
+	        // single application of 'node'
+	        return node;
+	    }
+	    return new ApplyOpsNode(node, node2);
     },
     regexpOp: function() {
-	if (this.hasMore()) {
+	    if (this.hasMore()) {
+	        var nextToken = this.peek();
+	        var node = null;
+	        switch (nextToken) {
+	        case '*':
+		        this.get();
+		        node = new OpNode('*');
+		        break;
+	        case '+':
+		        this.get();
+		        node = new OpNode('+');
+		        break;
+	        case '?':
+		        this.get();
+		        node = new OpNode('?');
+		        break;
+	        }
+	        if (!node) {
+		        return null;
+	        }
+	        var node2 = this.regexpOp();
+	        if (!node2) {
+		        return node;
+	        }
+	        return new SequentialOpsNode(node, node2);
+	    } else {
+	        return null;
+	    }
+    },
+    regexpBasic: function() {
+	    var index = this.index;
 	    var nextToken = this.peek();
 	    var node = null;
 	    switch (nextToken) {
-	    case '*':
-		this.get();
-		node = new OpNode('*');
-		break;
-	    case '+':
-		this.get();
-		node = new OpNode('+');
-		break;
-	    case '?':
-		this.get();
-		node = new OpNode('?');
-		break;
+	    case '[':
+	        this.get();
+	        node = this.charClass();
+	        if (!this.nextIs(']')) {
+		        // Parse error
+		        // return new Error("Expcted ']', got '" + this.peek() + "'");
+		        this.index = index;
+		        return null;
+	        }
+	        this.get();
+	        break;
+	    case '(':
+	        this.get();
+	        node = this.regexp();
+	        if (!this.nextIs(')')) {
+		        // Parse error
+		        // return new Error("Expected ')', got '" + this.peek() + "'");
+		        this.index = index;
+		        return null;
+	        }
+	        this.get();
+	        break;
+	    default:
+	        node = this.singleEscapedChar();
+	        if (!node) {
+		        node = this.singleChar();
+	        }
+	        if (!node) {
+		        // return new Error("Could not parse rule regexpBasic");
+		        this.index = index;
+		        return null;
+	        }
 	    }
-	    if (!node) {
-		return null;
-	    }
-	    var node2 = this.regexpOp();
-	    if (!node2) {
-		return node;
-	    }
-	    return new SequentialOpsNode(node, node2);
-	} else {
-	    return null;
-	}
-    },
-    regexpBasic: function() {
-	var index = this.index;
-	var nextToken = this.peek();
-	var node = null;
-	switch (nextToken) {
-	case '[':
-	    this.get();
-	    node = this.charClass();
-	    if (!this.nextIs(']')) {
-		// Parse error
-		// return new Error("Expcted ']', got '" + this.peek() + "'");
-		this.index = index;
-		return null;
-	    }
-	    this.get();
-	    break;
-	case '(':
-	    this.get();
-	    node = this.regexp();
-	    if (!this.nextIs(')')) {
-		// Parse error
-		// return new Error("Expected ')', got '" + this.peek() + "'");
-		this.index = index;
-		return null;
-	    }
-	    this.get();
-	    break;
-	default:
-	    node = this.singleEscapedChar();
-	    if (!node) {
-		node = this.singleChar();
-	    }
-	    if (!node) {
-		// return new Error("Could not parse rule regexpBasic");
-		this.index = index;
-		return null;
-	    }
-	}
-	// node could be an instance of 'Error'
-	return node;
+	    // node could be an instance of 'Error'
+	    return node;
     },
     charClass: function() {
-	var index = this.index;
-	var node = null;
-	var negated = false;
-	if (this.nextIs('^')) {
-	    this.get();
-	    negated = true;
-	}
-	node = this.charRangesOrSingles();
-	if (!node) {
-	    this.index = index;
-	    return null;
-	}
-	if (negated) {
-	    node = new NegationNode(node);
-	}
-	return node;
+	    var index = this.index;
+	    var node = null;
+	    var negated = false;
+	    if (this.nextIs('^')) {
+	        this.get();
+	        negated = true;
+	    }
+	    node = this.charRangesOrSingles();
+	    if (!node) {
+	        this.index = index;
+	        return null;
+	    }
+	    if (negated) {
+	        node = new NegationNode(node);
+	    }
+	    return node;
     },
     charRangesOrSingles: function() {
-	var index = this.index;
-	var node = this.charRange();
-	if (!node) {
-	    node = this.singleEscapedChar();
-	}
-	if (!node) {
-	    node = this.singleChar();
-	}
-	if (!node) {
-	    this.index = index;
-	    return null;
-	}
-	var node2 = this.charRangesOrSingles();
-	if (node2) {
-	    return new CharListNode(node, node2);
-	}
-	return node;
+	    var index = this.index;
+	    var node = this.charRange();
+	    if (!node) {
+	        node = this.singleEscapedChar();
+	    }
+	    if (!node) {
+	        node = this.singleChar();
+	    }
+	    if (!node) {
+	        this.index = index;
+	        return null;
+	    }
+	    var node2 = this.charRangesOrSingles();
+	    if (node2) {
+	        return new CharListNode(node, node2);
+	    }
+	    return node;
     },
     charRange: function() {
-	var index = this.index;
-	var char1 = this.singleChar();
-	if (!char1) {
-	    return null;
-	}
-	if (!this.nextIs('-')) {
-	    this.index = index;
-	    return null;
-	}
-	this.get();
-	var char2 = this.singleChar();
-	if (!char2) {
-	    this.index = index;
-	    return null;
-	}
-	return new CharRangeNode(char1, char2);
+	    var index = this.index;
+	    var char1 = this.singleChar();
+	    if (!char1) {
+	        return null;
+	    }
+	    if (!this.nextIs('-')) {
+	        this.index = index;
+	        return null;
+	    }
+	    this.get();
+	    var char2 = this.singleChar();
+	    if (!char2) {
+	        this.index = index;
+	        return null;
+	    }
+	    return new CharRangeNode(char1, char2);
     },
     singleChar: function() {
-	var nextToken = this.peek();
-	var disallowedTokens = "\\()[]|^$";
-	if (disallowedTokens.indexOf(nextToken) != -1) {
-	    return null;
-	} else {
-	    return new SingleChar(this.get());
-	}
+	    var nextToken = this.peek();
+	    var disallowedTokens = "\\()[]|^$";
+	    if (disallowedTokens.indexOf(nextToken) != -1) {
+	        return null;
+	    } else {
+	        return new SingleChar(this.get());
+	    }
     },
     singleEscapedChar: function() {
-	var index = this.index;
-	var nextToken = this.peek();
-	if (nextToken != '\\') {
-	    return null;
-	}
-	this.get();
-	if (!this.hasMore()) {
-	    this.index = index;
-	    return null;
-	}
-	return new EscapedChar(this.get());
+	    var index = this.index;
+	    var nextToken = this.peek();
+	    if (nextToken != '\\') {
+	        return null;
+	    }
+	    this.get();
+	    if (!this.hasMore()) {
+	        this.index = index;
+	        return null;
+	    }
+	    return new EscapedChar(this.get());
     }
 };
 
@@ -492,15 +493,15 @@ function RegExpNFA(expression) {
 
 function processNode(node, nodeNum) {
     if (node.id) {
-	return nodeNum;
+	    return nodeNum;
     }
     node.id = nodeNum++;
     var keys = Object.keys(node.transitions);
     keys.forEach(function(key) {
-	var nodes = node.transitions[key];
-	nodes.forEach(function(n) {
-	    nodeNum = processNode(n, nodeNum);
-	});
+	    var nodes = node.transitions[key];
+	    nodes.forEach(function(n) {
+	        nodeNum = processNode(n, nodeNum);
+	    });
     });
     return nodeNum;
 }
@@ -514,89 +515,89 @@ function numberNodes(nfa, nodeNum) {
 
 RegExpNFA.prototype = {
     toNFA: function() {
-	var parsed = this.parser.parse();
+	    var parsed = this.parser.parse();
         this.nfa = parsed.toNFA();
-	numberNodes(this.nfa, 1);
-	this.nfa[1].isFinal = true;
+	    numberNodes(this.nfa, 1);
+	    this.nfa[1].isFinal = true;
         return this.nfa;
     },
     resetIndexes: function(node) {
-	if (!node.hasOwnProperty('index') || node.index != -2) {
-	    // Recurse
-	    node.index = -2;
-	    var keys = Object.keys(node.transitions);
-	    keys.forEach(function(key) {
-		var nodes = node.transitions[key];
-		nodes.forEach(function(n) {
-		    this.resetIndexes(n);
-		}.bind(this));
-	    }.bind(this));
-	}
+	    if (!node.hasOwnProperty('index') || node.index != -2) {
+	        // Recurse
+	        node.index = -2;
+	        var keys = Object.keys(node.transitions);
+	        keys.forEach(function(key) {
+		        var nodes = node.transitions[key];
+		        nodes.forEach(function(n) {
+		            this.resetIndexes(n);
+		        }.bind(this));
+	        }.bind(this));
+	    }
     },
     toDot: function() {
-	var nfa = this.toNFA();
-	this.resetIndexes(nfa[0]);
-	var q = [ nfa[0] ];
-	var dot = [ 'digraph NFA {' ];
-	while (q.length != 0) {
-	    var top = q.shift();
-	    top.index = 1;
-	    if (top.isFinal) {
-		dot.push(util.format('  %s[style=bold]', top.id));
-	    }
-	    var keys = Object.keys(top.transitions);
-	    keys.forEach(function(key) {
-		var nodes = top.transitions[key];
-		nodes.forEach(function(n) {
-		    dot.push(util.format('  %s -> %s[label=" %s"]',
-					 top.id, n.id, key));
-		    if (n.index == -2) {
-			n.index = 1;
-			q.push(n);
-		    }
-		});
-	    });
-	} // while (q.length != 0)
-	dot.push('}');
-	return dot.join('\n');
+	    var nfa = this.toNFA();
+	    this.resetIndexes(nfa[0]);
+	    var q = [ nfa[0] ];
+	    var dot = [ 'digraph NFA {' ];
+	    while (q.length != 0) {
+	        var top = q.shift();
+	        top.index = 1;
+	        if (top.isFinal) {
+		        dot.push(util.format('  %s[style=bold]', top.id));
+	        }
+	        var keys = Object.keys(top.transitions);
+	        keys.forEach(function(key) {
+		        var nodes = top.transitions[key];
+		        nodes.forEach(function(n) {
+		            dot.push(util.format('  %s -> %s[label=" %s"]',
+					                     top.id, n.id, key));
+		            if (n.index == -2) {
+			            n.index = 1;
+			            q.push(n);
+		            }
+		        });
+	        });
+	    } // while (q.length != 0)
+	    dot.push('}');
+	    return dot.join('\n');
     }
 };
 
 function searchNFA(str, q, matches) {
     var top;
     while (q.length != 0) {
-	top = q.shift();
-	console.log("Expanding node id:", top.id, "index:", top.index, "isFinal:", top.isFinal);
-	if (top.isFinal) {
-	    matches.push(top.index);
-	}
-	if (top.transitions.hasOwnProperty(epsilon)) {
-	    // Expand the epsilon transition for 'top' and also move
-	    // ahead by the character at str[top.index + 1], but only
-	    // if the node we are going to add isn't already added due
-	    // to an equivalent or larger index.
-	    top.transitions[epsilon].forEach(function(node) {
-		if (node.index < top.index) {
-		    node.index = top.index;
-		    console.log("Adding to Q");
-		    q.push(node);
-		}
-	    });
-	}
-	var index = top.index;
-	if (index + 1 >= str.length || index + 1 < 0) {
-	    continue;
-	}
-	console.log(util.format("Checking transitions for char '%s' at index '%d'", str[index+1], index+1));
-	if (top.transitions.hasOwnProperty(str[index + 1])) {
-	    top.transitions[str[index + 1]].forEach(function(node) {
-		if (node.index < index + 1) {
-		    console.log(util.format("Adding to Q on transition: %s", str[index+1]));
-		    node.index = index + 1;
-		    q.push(node);
-		}
-	    });
-	}
+	    top = q.shift();
+	    console.log("Expanding node id:", top.id, "index:", top.index, "isFinal:", top.isFinal);
+	    if (top.isFinal) {
+	        matches.push(top.index);
+	    }
+	    if (top.transitions.hasOwnProperty(epsilon)) {
+	        // Expand the epsilon transition for 'top' and also move
+	        // ahead by the character at str[top.index + 1], but only
+	        // if the node we are going to add isn't already added due
+	        // to an equivalent or larger index.
+	        top.transitions[epsilon].forEach(function(node) {
+		        if (node.index < top.index) {
+		            node.index = top.index;
+		            console.log("Adding to Q");
+		            q.push(node);
+		        }
+	        });
+	    }
+	    var index = top.index;
+	    if (index + 1 >= str.length || index + 1 < 0) {
+	        continue;
+	    }
+	    console.log(util.format("Checking transitions for char '%s' at index '%d'", str[index+1], index+1));
+	    if (top.transitions.hasOwnProperty(str[index + 1])) {
+	        top.transitions[str[index + 1]].forEach(function(node) {
+		        if (node.index < index + 1) {
+		            console.log(util.format("Adding to Q on transition: %s", str[index+1]));
+		            node.index = index + 1;
+		            q.push(node);
+		        }
+	        });
+	    }
     } // while (q.length != 0)
 }
 
