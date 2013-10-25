@@ -522,17 +522,22 @@ RegExpNFA.prototype = {
         return this.nfa;
     },
     resetIndexes: function(node) {
-	    if (!node.hasOwnProperty('index') || node.index != -2) {
-	        // Recurse
-	        node.index = -2;
-	        var keys = Object.keys(node.transitions);
+        var q = [ node ];
+        var top;
+        while (q.length != 0) {
+            top = q.shift();
+	        top.index = -2;
+            // Process child nodes
+	        var keys = Object.keys(top.transitions);
 	        keys.forEach(function(key) {
-		        var nodes = node.transitions[key];
+		        var nodes = top.transitions[key];
 		        nodes.forEach(function(n) {
-		            this.resetIndexes(n);
+                    if (!n.hasOwnProperty('index') || n.index != -2) {
+                        q.push(n);
+                    }
 		        }.bind(this));
 	        }.bind(this));
-	    }
+	    } // while (q.length != 0)
     },
     toDot: function() {
 	    var nfa = this.toNFA();
@@ -610,12 +615,13 @@ function search(str, reNFA) {
     return matches;
 }
 
-var expression = "x[0-3]*|(a|(bc))*";
+// var expression = "x[0-3]*|(a|(bc))*";
+var expression = ".*x|(a|(bc))*";
 // var expression = "[0-12]";
 var r = new RegExpParser(expression);
 var nfaGenerator = new RegExpNFA(expression);
 var nfa = nfaGenerator.toNFA();
-// var m = search("bwcabcbcbx", nfa);
-var m = search("", nfa);
+var m = search("bwcabcbcbx", nfa);
+// var m = search("", nfa);
 console.log(m);
 // console.log(nfaGenerator.toDot());
