@@ -28,7 +28,6 @@ function RegExpParser(expression) {
 function UnionNode(node1, node2) {
     this.node1 = node1;
     this.node2 = node2;
-    this.op = 'union';
 }
 UnionNode.prototype = {
     toNFA: function() {
@@ -60,7 +59,6 @@ EmptyNode.prototype = {
 function SequenceNode(node1, node2) {
     this.node1 = node1;
     this.node2 = node2;
-    this.op = 'sequence';
 }
 SequenceNode.prototype = {
     toNFA: function() {
@@ -76,7 +74,6 @@ SequenceNode.prototype = {
 function ApplyOpsNode(sym, ops) {
     this.sym = sym;
     this.ops = ops;
-    this.op = 'applyops';
 }
 ApplyOpsNode.prototype = {
     toNFA: function() {
@@ -132,6 +129,10 @@ SequentialOpsNode.prototype = {
 };
 
 function NFANodeFromCharList(charList) {
+    // Handle an empty list
+    if (charList.length == 0) {
+	return new EmptyNode().toNFA();
+    }
     var node = new SingleChar(charList[0]);
     for (var i = 1; i < charList.length; ++i) {
         var node2 = new SingleChar(charList[i]);
@@ -158,8 +159,8 @@ CharListNode.prototype = {
 };
 
 function CharRangeNode(lhs, rhs) {
-    this.lhs = lhs;
-    this.rhs = rhs;
+    this.lhs = lhs.ch;
+    this.rhs = rhs.ch;
     this.type = 'charrange';
 }
 CharRangeNode.prototype = {
@@ -182,6 +183,9 @@ CharRangeNode.prototype = {
             }
         }
         return ret;
+    },
+    toNFA: function() {
+        return NFANodeFromCharList(this.getCharList());
     }
 }
 
@@ -515,17 +519,56 @@ RegExpNFA.prototype = {
 	numberNodes(this.nfa, 1);
 	this.nfa[1].isFinal = true;
         return this.nfa;
+    },
+    resetIndexes: function(node) {
+	if (!node.hasOwnProperty('index') || node.index != -2) {
+	    // Recurse
+	    node.index = -2;
+	    var keys = Object.keys(node.transitions);
+	    keys.forEach(function(key) {
+		var nodes = node.transitions[key];
+		nodes.forEach(function(n) {
+		    this.resetIndexes(n);
+		}.bind(this));
+	    }.bind(this));
+	}
+    },
+    toDot: function() {
+	var nfa = this.toNFA();
+	this.resetIndexes(nfa[0]);
+	var q = [ nfa[0] ];
+	var dot = [ 'digraph NFA {' ];
+	while (q.length != 0) {
+	    var top = q.shift();
+	    top.index = 1;
+	    if (top.isFinal) {
+		dot.push(util.format('  %s[style=bold]', top.id));
+	    }
+	    var keys = Object.keys(top.transitions);
+	    keys.forEach(function(key) {
+		var nodes = top.transitions[key];
+		nodes.forEach(function(n) {
+		    dot.push(util.format('  %s -> %s[label=" %s"]',
+					 top.id, n.id, key));
+		    if (n.index == -2) {
+			n.index = 1;
+			q.push(n);
+		    }
+		});
+	    });
+	} // while (q.length != 0)
+	dot.push('}');
+	return dot.join('\n');
     }
 };
 
 function searchNFA(str, q, matches) {
+    var top;
     while (q.length != 0) {
-	var top = q.shift();
+	top = q.shift();
 	console.log("Expanding node id:", top.id, "index:", top.index, "isFinal:", top.isFinal);
 	if (top.isFinal) {
-	    if (top.index > -1) {
-		matches.push(top.index);
-	    }
+	    matches.push(top.index);
 	}
 	if (top.transitions.hasOwnProperty(epsilon)) {
 	    // Expand the epsilon transition for 'top' and also move
@@ -533,7 +576,7 @@ function searchNFA(str, q, matches) {
 	    // if the node we are going to add isn't already added due
 	    // to an equivalent or larger index.
 	    top.transitions[epsilon].forEach(function(node) {
-		if (!node.hasOwnProperty('index') || node.index < top.index) {
+		if (node.index < top.index) {
 		    node.index = top.index;
 		    console.log("Adding to Q");
 		    q.push(node);
@@ -541,13 +584,13 @@ function searchNFA(str, q, matches) {
 	    });
 	}
 	var index = top.index;
-	if (!(index + 1 < str.length)) {
+	if (index + 1 >= str.length || index + 1 < 0) {
 	    continue;
 	}
 	console.log(util.format("Checking transitions for char '%s' at index '%d'", str[index+1], index+1));
 	if (top.transitions.hasOwnProperty(str[index + 1])) {
 	    top.transitions[str[index + 1]].forEach(function(node) {
-		if (!node.hasOwnProperty('index') || node.index < index + 1) {
+		if (node.index < index + 1) {
 		    console.log(util.format("Adding to Q on transition: %s", str[index+1]));
 		    node.index = index + 1;
 		    q.push(node);
@@ -558,17 +601,20 @@ function searchNFA(str, q, matches) {
 }
 
 function search(str, reNFA) {
-    var q = [];
+    var q = [ reNFA[0] ];
     var matches = [];
+    RegExpNFA.prototype.resetIndexes(reNFA[0]);
     reNFA[0].index = -1;
-    q.push(reNFA[0]);
     searchNFA(str, q, matches);
     return matches;
 }
 
-var expression = ".*x|(a|(bc))*";
+var expression = "x[0-3]*|(a|(bc))*";
+// var expression = "[0-12]";
 var r = new RegExpParser(expression);
 var nfaGenerator = new RegExpNFA(expression);
 var nfa = nfaGenerator.toNFA();
-var m = search("bwcabcbcbx", nfa);
+// var m = search("bwcabcbcbx", nfa);
+var m = search("", nfa);
 console.log(m);
+// console.log(nfaGenerator.toDot());
