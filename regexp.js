@@ -572,7 +572,7 @@ function searchNFA(str, q, matches) {
     var top;
     while (q.length != 0) {
 	    top = q.shift();
-	    console.log("Expanding node id:", top.id, "index:", top.index, "isFinal:", top.isFinal);
+	    // console.log("Expanding node id:", top.id, "index:", top.index, "isFinal:", top.isFinal);
 	    if (top.isFinal) {
 	        matches.push(top.index);
 	    }
@@ -584,7 +584,7 @@ function searchNFA(str, q, matches) {
 	        top.transitions[epsilon].forEach(function(node) {
 		        if (node.index < top.index) {
 		            node.index = top.index;
-		            console.log("Adding to Q");
+		            // console.log("Adding to Q");
 		            q.push(node);
 		        }
 	        });
@@ -593,11 +593,11 @@ function searchNFA(str, q, matches) {
 	    if (index + 1 >= str.length || index + 1 < 0) {
 	        continue;
 	    }
-	    console.log(util.format("Checking transitions for char '%s' at index '%d'", str[index+1], index+1));
+	    // console.log(util.format("Checking transitions for char '%s' at index '%d'", str[index+1], index+1));
 	    if (top.transitions.hasOwnProperty(str[index + 1])) {
 	        top.transitions[str[index + 1]].forEach(function(node) {
 		        if (node.index < index + 1) {
-		            console.log(util.format("Adding to Q on transition: %s", str[index+1]));
+		            // console.log(util.format("Adding to Q on transition: %s", str[index+1]));
 		            node.index = index + 1;
 		            q.push(node);
 		        }
@@ -615,13 +615,6 @@ function search(str, reNFA) {
     return matches;
 }
 
-// var expression = "x[0-3]*|(a|(bc))*";
-var expression = ".*x|(a|(bc))*";
-// var expression = "[0-12]";
-var r = new RegExpParser(expression);
-var nfaGenerator = new RegExpNFA(expression);
-var nfa = nfaGenerator.toNFA();
-var m = search("bwcabcbcbx", nfa);
-// var m = search("", nfa);
-console.log(m);
-// console.log(nfaGenerator.toDot());
+exports.RegExpParser = RegExpParser;
+exports.RegExpNFA = RegExpNFA;
+exports.search = search;

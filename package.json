@@ -2,7 +2,7 @@
   "name": "regexp-evaluator",
   "version": "0.0.1",
   "description": "A regular expression evaluation engine",
-  "main": "main.js",
+  "main": "regexp.js",
   "repository": "",
   "author": "Dhruv Matani",
   "dependencies": {
