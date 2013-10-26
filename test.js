@@ -1,4 +1,5 @@
 var re = require('./regexp.js');
+var _ = require('underscore');
 
 function runTest(expression, str, matches) {
     var nfaGenerator = new re.RegExpNFA(expression);
@@ -43,4 +44,10 @@ exports.testPathologicalRE = function(test) {
     var exp = "c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?cccccccccccccccccccc";
     var str = "cccccccccccccccccccc";
     runTest.apply(test, [ exp, str, [ 19 ]]);
+};
+
+exports.testURL = function(test) {
+    var exp = "https?://[^/]+(/(.*))?"
+    var str = "https://ddg.gg/search/?q=regular%20expressions";
+    runTest.apply(test, [ exp, str, _.range(8, 46)]);
 };
