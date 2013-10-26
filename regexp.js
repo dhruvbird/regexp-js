@@ -533,6 +533,7 @@ RegExpNFA.prototype = {
 		        var nodes = top.transitions[key];
 		        nodes.forEach(function(n) {
                     if (!n.hasOwnProperty('index') || n.index != -2) {
+                        n.index = -2;
                         q.push(n);
                     }
 		        }.bind(this));

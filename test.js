@@ -38,3 +38,9 @@ exports.testPrefixRE = function(test) {
     var str = "c";
     runTest.apply(test, [ "c?c", str, [ 0 ]]);
 };
+
+exports.testPathologicalRE = function(test) {
+    var exp = "c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?cccccccccccccccccccc";
+    var str = "cccccccccccccccccccc";
+    runTest.apply(test, [ exp, str, [ 19 ]]);
+};
