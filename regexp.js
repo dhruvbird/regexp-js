@@ -130,16 +130,12 @@ SequentialOpsNode.prototype = {
 };
 
 function NFANodeFromCharList(charList) {
-    // Handle an empty list
-    if (charList.length == 0) {
-	    return new EmptyNode().toNFA();
+    var lhs = new NFANode();
+    var rhs = new NFANode();
+    for (var i = 0; i < charList.length; ++i) {
+        lhs.on(rhs, charList[i]);
     }
-    var node = new SingleChar(charList[0]);
-    for (var i = 1; i < charList.length; ++i) {
-        var node2 = new SingleChar(charList[i]);
-        node = new UnionNode(node, node2);
-    }
-    return node.toNFA();
+    return [ lhs, rhs ];
 }
 
 function CharListNode(one, many) {
