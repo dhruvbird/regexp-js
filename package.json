@@ -3,9 +3,16 @@
   "version": "0.0.1",
   "description": "A regular expression evaluation engine",
   "main": "regexp.js",
-  "repository": "",
+  "scripts": {
+    "test": "nodeunit test.js"
+  },
+  "homepage": "https://github.com/dhruvbird/regexp-js",
+  "repository": "git@github.com:dhruvbird/regexp-js.git",
   "author": "Dhruv Matani",
   "dependencies": {
     "underscore": "~1.5.2"
+  },
+  "devDependencies": {
+    "nodeunit": "~0.8.1"
   }
 }

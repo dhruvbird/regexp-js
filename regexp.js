@@ -568,50 +568,74 @@ RegExpNFA.prototype = {
     }
 };
 
-function searchNFA(str, q, matches) {
+/**
+ * Add 'node' to the queue and expands all transitions originating
+ * from 'node' on epsilon (no input). Adds all the expanded nodes to
+ * queue 'q'. 'addedNodes' is a map that indicates whether the node
+ * 'node' has already been added to the queue 'q'. This function
+ * recursively expands all epsilon transitions till it can not expand
+ * any more or all nodes have been added.
+ *
+ */
+function addNode(node, q, addedNodes) {
+    if (addedNodes[node.id]) {
+        return;
+    }
+    addedNodes[node.id] = node;
+    q.push(node)
+    if (!node.transitions.hasOwnProperty(epsilon)) {
+        return;
+    }
+    node.transitions[epsilon].forEach(function(n) {
+        addNode(n, q, addedNodes);
+    });
+}
+
+function addMatches(matches, addedNodes, i) {
+    addedNodes.forEach(function(node) {
+        if (node.isFinal) {
+            matches.push(i);
+        }
+    });
+}
+
+/**
+ * Searches string 'str' using automation 'nfa' using Thompson's O(nm)
+ * searching algorithm by maintaining 2 queues.
+ *
+ */
+function searchNFA(str, nfa, matches) {
     var top;
-    while (q.length != 0) {
-	    top = q.shift();
-	    // console.log("Expanding node id:", top.id, "index:", top.index, "isFinal:", top.isFinal);
-	    if (top.isFinal) {
-	        matches.push(top.index);
-	    }
-	    if (top.transitions.hasOwnProperty(epsilon)) {
-	        // Expand the epsilon transition for 'top' and also move
-	        // ahead by the character at str[top.index + 1], but only
-	        // if the node we are going to add isn't already added due
-	        // to an equivalent or larger index.
-	        top.transitions[epsilon].forEach(function(node) {
-		        if (node.index < top.index) {
-		            node.index = top.index;
-		            // console.log("Adding to Q");
-		            q.push(node);
-		        }
-	        });
-	    }
-	    var index = top.index;
-	    if (index + 1 >= str.length || index + 1 < 0) {
-	        continue;
-	    }
-	    // console.log(util.format("Checking transitions for char '%s' at index '%d'", str[index+1], index+1));
-	    if (top.transitions.hasOwnProperty(str[index + 1])) {
-	        top.transitions[str[index + 1]].forEach(function(node) {
-		        if (node.index < index + 1) {
-		            // console.log(util.format("Adding to Q on transition: %s", str[index+1]));
-		            node.index = index + 1;
-		            q.push(node);
-		        }
-	        });
-	    }
-    } // while (q.length != 0)
+    var q1 = [ ], q2 = [ ];
+    var q = q1;
+    var i = -1;
+    var j;
+    var addedNodes = [ ];
+
+    addNode(nfa, q, addedNodes);
+    addMatches(matches, addedNodes, i);
+
+    for (i = 0; i < str.length; ++i) {
+        addedNodes = [ ];
+        var otherq = (q == q1 ? q2 : q1);
+        for (j = 0; j < q.length; ++j) {
+            if (q[j].transitions.hasOwnProperty(str[i])) {
+                q[j].transitions[str[i]].forEach(function(n) {
+                    addNode(n, otherq, addedNodes);
+                });
+            }
+        }
+        addMatches(matches, addedNodes, i);
+        q.splice(0);
+        q = otherq;
+    }
 }
 
 function search(str, reNFA) {
-    var q = [ reNFA[0] ];
     var matches = [];
     RegExpNFA.prototype.resetIndexes(reNFA[0]);
     reNFA[0].index = -1;
-    searchNFA(str, q, matches);
+    searchNFA(str, reNFA[0], matches);
     return matches;
 }
 

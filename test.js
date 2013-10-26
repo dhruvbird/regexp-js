@@ -28,3 +28,13 @@ exports.testEmptyOrNonEmpty = function(test) {
     var str = "abcqbcbcxx";
     runTest.apply(test, [ ".*x|(a|(bc))*", str, [ -1, 0, 2, 8, 9 ]]);
 };
+
+exports.testAlternationKleen = function(test) {
+    var str = "abc";
+    runTest.apply(test, [ "(a|(bc))*", str, [ -1, 0, 2 ]]);
+};
+
+exports.testPrefixRE = function(test) {
+    var str = "c";
+    runTest.apply(test, [ "c?c", str, [ 0 ]]);
+};
