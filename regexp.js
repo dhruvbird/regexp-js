@@ -5,6 +5,7 @@ var _ = require('underscore');
 var epsilon = 'ɛ';
 // Create a new NFA node with ID (nodeId)
 function NFANode() {
+    // Each element of this.transitions is an array of NFANode(s)
     this.transitions = { };
 }
 
@@ -13,6 +14,26 @@ NFANode.prototype = {
         input = input || epsilon;
         if (!this.transitions.hasOwnProperty(input)) {
             this.transitions[input] = [ ];
+        }
+        this.transitions[input].push(toNode);
+        return this;
+    }
+};
+
+function DFANode() {
+    // Each element of this.transitions is a DFANode
+    this.transitions = { };
+}
+
+DFANode.prototype = {
+    on: function(toNode, input) {
+        if (!toNode || !input) {
+            throw new Error("Usage: on(node, input)");
+        }
+        if (this.transitions.hasOwnProperty(input)) {
+            throw new Error(
+                util.format("You already have a transition on input '%s'",
+                            input));
         }
         this.transitions[input].push(toNode);
         return this;
@@ -631,11 +652,21 @@ function searchNFA(str, nfa, matches) {
     }
 }
 
-function search(str, reNFA) {
+function search(str, FSA) {
     var matches = [];
-    RegExpNFA.prototype.resetIndexes(reNFA[0]);
-    reNFA[0].index = -1;
-    searchNFA(str, reNFA[0], matches);
+    if (FSA.length == 0) {
+        throw new Error("Expected a FSA, got an empty array");
+    }
+    if (FSA[0] instanceof NFANode) {
+        RegExpNFA.prototype.resetIndexes(FSA[0]);
+        FSA[0].index = -1;
+        searchNFA(str, FSA[0], matches);
+    } else if (FSA[0] instanceof DFANode) {
+    } else {
+        throw new Error(
+            util.format("Expected NFANode or DFANode; Got: %s",
+                        (FSA[0] ? FSA[0].constructor.name : "undefined")));
+    }
     return matches;
 }
 
