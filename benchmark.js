@@ -2,6 +2,12 @@ var b = require('b');
 var re = require('./regexp.js');
 var util = require('util');
 
+/* Data for benchmarks taken from:
+ * http://tusker.org/regex/regex_benchmark.html and
+ * http://tusker.org/regex/20100713.html
+ *
+ */
+
 var REs = ["(([^:]+)://)?([^:/]+)(:([0-9]+))?(/.*)",
 	   ".*(([^:]+)://)?([^:/]+)(:([0-9]+))?(/.*)",
 	   ".*usd [+-]?[0-9]+.[0-9][0-9]"
