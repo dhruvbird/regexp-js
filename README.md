@@ -29,3 +29,9 @@ Unit tests to verify correctness of the generated NFA don't yet exist.
   * The AST generation code (function ```OpsNode``` and ```SequentialOpsNode```)
   * All the \*Node functions to add support for a ```clone``` method since supporting a sequence of ```{n,m}``` matches would have to supported by replicating the NFA for the sequence that is being repeated.
   * No changes to the NFA/DFA generation or the matching code
+3. Add support for capturing subexpression (but no backreferences) so that users can refer to the 1st, 2nd, etc... captured parenthesized subexpression. Requires you to make changes to:
+  * The parsing code (function ```regexpBasic```) to add support for creating a new node for a parenthesized subexpression
+  * Create a new subexpression node type so that the real expression can be embedded within it
+  * The NFA generation code to add dummy nodes that indicate the start and end of a subexpression and link the 2 so that we know when a subexpression begins and ends when we encounter these nodes while simulating the NFA
+  * Apart from the above we might need to make changes to other helper functions to record and pass around state and probably change the search/matching functions to record wrapped NFA nodes in the queue rather than real NFA nodes (since we want to store other metadata along with a 
+node in the queue)
