@@ -40,10 +40,22 @@ exports.testPrefixRE = function(test) {
     runTest.apply(test, [ "c?c", str, [ 0 ]]);
 };
 
-exports.testPathologicalRE = function(test) {
+exports.testPathologicalRE20_20 = function(test) {
     var exp = "c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?cccccccccccccccccccc";
     var str = "cccccccccccccccccccc";
     runTest.apply(test, [ exp, str, [ 19 ]]);
+};
+
+exports.testPathologicalRE24_24 = function(test) {
+    var exp = "c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?cccccccccccccccccccccccc";
+    var str = "cccccccccccccccccccccccc";
+    runTest.apply(test, [ exp, str, [ 23 ]]);
+};
+
+exports.testPathologicalRE24_23 = function(test) {
+    var exp = "c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?c?cccccccccccccccccccccccc";
+    var str = "ccccccccccccccccccccccc";
+    runTest.apply(test, [ exp, str, [ ]]);
 };
 
 exports.testURL = function(test) {

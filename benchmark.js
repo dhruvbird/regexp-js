@@ -6,6 +6,9 @@ var util = require('util');
  * http://tusker.org/regex/regex_benchmark.html and
  * http://tusker.org/regex/20100713.html
  *
+ * TODO: Also incorporate benchmarks from:
+ * http://lh3lh3.users.sourceforge.net/reb.shtml
+ *
  */
 
 var REs = ["(([^:]+)://)?([^:/]+)(:([0-9]+))?(/.*)",
