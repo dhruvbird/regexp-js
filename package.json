@@ -1,7 +1,7 @@
 {
-  "name": "regexp-evaluator",
+  "name": "regexp-js",
   "version": "0.0.1",
-  "description": "A regular expression evaluation engine",
+  "description": "A regular expression evaluation engine for fun and education",
   "main": "regexp.js",
   "scripts": {
     "test": "nodeunit test.js"
