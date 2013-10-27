@@ -24,6 +24,7 @@ function RegExpParser(expression) {
     this.root = null;
     this.index = 0;
     this.expLen = this.expression.length;
+    this.error = '';
 }
 
 function UnionNode(node1, node2) {
@@ -351,6 +352,7 @@ RegExpParser.prototype = {
 		        break;
 	        }
 	        if (!node) {
+                this.error = 'Expected [*+?], Got: [' + nextToken + ']';
 		        return null;
 	        }
 	        var node2 = this.regexpOp();
@@ -359,6 +361,7 @@ RegExpParser.prototype = {
 	        }
 	        return new SequentialOpsNode(node, node2);
 	    } else {
+            this.error = 'Expected [*+?], Got: { end of input }';
 	        return null;
 	    }
     },
@@ -372,7 +375,7 @@ RegExpParser.prototype = {
 	        node = this.charClass();
 	        if (!this.nextIs(']')) {
 		        // Parse error
-		        // return new Error("Expcted ']', got '" + this.peek() + "'");
+		        this.error = "Expcted ']', got '" + this.peek() + "'";
 		        this.index = index;
 		        return null;
 	        }
@@ -383,7 +386,7 @@ RegExpParser.prototype = {
 	        node = this.regexp();
 	        if (!this.nextIs(')')) {
 		        // Parse error
-		        // return new Error("Expected ')', got '" + this.peek() + "'");
+		        this.error = "Expected ')', got '" + this.peek() + "'";
 		        this.index = index;
 		        return null;
 	        }
@@ -395,12 +398,10 @@ RegExpParser.prototype = {
 		        node = this.singleChar();
 	        }
 	        if (!node) {
-		        // return new Error("Could not parse rule regexpBasic");
 		        this.index = index;
 		        return null;
 	        }
 	    }
-	    // node could be an instance of 'Error'
 	    return node;
     },
     charClass: function() {
@@ -471,10 +472,12 @@ RegExpParser.prototype = {
 	    var index = this.index;
 	    var nextToken = this.peek();
 	    if (nextToken != '\\') {
+            this.error = "Expected '\\', Got: '" + nextToken + "'";
 	        return null;
 	    }
 	    this.get();
 	    if (!this.hasMore()) {
+            this.error = "Expected { escape character after \\ }, Got: { end of input }";
 	        this.index = index;
 	        return null;
 	    }
