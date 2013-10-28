@@ -36,3 +36,22 @@ Unit tests to verify correctness of the generated NFA don't yet exist.
   * Apart from the above we might need to make changes to other helper functions to record and pass around state and probably change the search/matching functions to record wrapped NFA nodes in the queue rather than real NFA nodes (since we want to store other metadata along with a 
 node in the queue)
 4. Limit the time spent converting an NFA to a DFA. If we spend a lot of time converting an NFA to a DFA, the cost of doing so might outweight the cost of matching using the NFA in the first place. Re-engineer the ```toDFA``` function to accept a parameter ```maxOperations``` that denotes the maximum number of *operations* that the NFA -> DFA converter is allowed to perform before bailing out.
+5. Add support for matching input streams (versus input strings). This means that you should be able to match the input when you feed in parts of it at a time. For example, consider the following (hypothetical) API:
+
+```javascript
+var re = new regexp.RegExpStreaming("(a|b)*b");
+var data = file.read(64); // Read 64 bytes from 'file'
+var m = [ ];
+while (data) {
+  m = re.feedSearch(data);
+  if (m.length > 0) {
+    console.log("Found matches at indexes:", String(m), "in input");
+  }
+  data = file.read(64);
+}
+```
+This can be accomplished entirely by making changes to the string searching/matching code by always saving the state that the NFA/DFA is currently in and continuing the match from where we left off last.
+  * In case of the NFA matcher, we need to keep track of all the states in the queue when we processed the last character of input.
+  * In case of the DFA matcher, we need only track the last that that our FSA was in when we matched the last character of input.
+
+This is an [example of a streaming regexp matching library](https://github.com/agentzh/sregex) written in C.
