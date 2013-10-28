@@ -1,6 +1,7 @@
 /* -*- indent-tabs-mode: nil; c-basic-offset: 4; tab-width: 4 -*- */
 var util = require('util');
 var _ = require('underscore');
+var assert = require('assert').ok;
 
 var epsilon = 'ɛ';
 // Create a new NFA node with ID (nodeId)
@@ -17,12 +18,24 @@ NFANode.prototype = {
         }
         this.transitions[input].push(toNode);
         return this;
+    },
+    hasTransitionOn: function(input) {
+        return this.transitions.hasOwnProperty(input);
+    },
+    getTransitionSymbols: function() {
+        var keys = Object.keys(this.transitions);
+        var pos = keys.indexOf(epsilon);
+        if (pos != -1) {
+            keys.splice(pos, 1);
+        }
+        return keys;
     }
 };
 
-function DFANode() {
+function DFANode(id) {
     // Each element of this.transitions is a DFANode
     this.transitions = { };
+    this.id = id;
 }
 
 DFANode.prototype = {
@@ -35,7 +48,7 @@ DFANode.prototype = {
                 util.format("You already have a transition on input '%s'",
                             input));
         }
-        this.transitions[input].push(toNode);
+        this.transitions[input] = toNode;
         return this;
     }
 };
@@ -533,6 +546,29 @@ function numberNodes(nfa, nodeNum) {
     return nodeNum;
 }
 
+function resetIndexes(node) {
+    var q = [ node ];
+    var top;
+    while (q.length != 0) {
+        top = q.shift();
+	    top.index = -2;
+        // Process child nodes
+	    var keys = Object.keys(top.transitions);
+	    keys.forEach(function(key) {
+		    var nodes = top.transitions[key];
+            if (!(nodes instanceof Array)) {
+                nodes = [ nodes ];
+            }
+		    nodes.forEach(function(n) {
+                if (!n.hasOwnProperty('index') || n.index != -2) {
+                    n.index = -2;
+                    q.push(n);
+                }
+		    });
+	    });
+	} // while (q.length != 0)
+}
+
 RegExpNFA.prototype = {
     toNFA: function() {
 	    var parsed = this.parser.parse();
@@ -541,28 +577,9 @@ RegExpNFA.prototype = {
 	    this.nfa[1].isFinal = true;
         return this.nfa;
     },
-    resetIndexes: function(node) {
-        var q = [ node ];
-        var top;
-        while (q.length != 0) {
-            top = q.shift();
-	        top.index = -2;
-            // Process child nodes
-	        var keys = Object.keys(top.transitions);
-	        keys.forEach(function(key) {
-		        var nodes = top.transitions[key];
-		        nodes.forEach(function(n) {
-                    if (!n.hasOwnProperty('index') || n.index != -2) {
-                        n.index = -2;
-                        q.push(n);
-                    }
-		        }.bind(this));
-	        }.bind(this));
-	    } // while (q.length != 0)
-    },
     toDot: function() {
 	    var nfa = this.toNFA();
-	    this.resetIndexes(nfa[0]);
+	    resetIndexes(nfa[0]);
 	    var q = [ nfa[0] ];
 	    var dot = [ 'digraph NFA {' ];
 	    while (q.length != 0) {
@@ -658,7 +675,7 @@ function search(str, FSA) {
         throw new Error("Expected a FSA, got an empty array");
     }
     if (FSA[0] instanceof NFANode) {
-        RegExpNFA.prototype.resetIndexes(FSA[0]);
+        resetIndexes(FSA[0]);
         FSA[0].index = -1;
         searchNFA(str, FSA[0], matches);
     } else if (FSA[0] instanceof DFANode) {
@@ -670,6 +687,242 @@ function search(str, FSA) {
     return matches;
 }
 
+function epsilonClosureRecursive(states, visIndex, ret) {
+    states.forEach(function(state) {
+        if (state.index == visIndex) {
+            return;
+        }
+        state.index = visIndex;
+        ret.push(state);
+        if (state.hasTransitionOn(epsilon)) {
+            epsilonClosureRecursive(state.transitions[epsilon], visIndex, ret);
+        }
+    });
+}
+
+function epsilonClosure(states, visIndex) {
+    var ret = [ ];
+    epsilonClosureRecursive(states, visIndex, ret);
+    return ret;
+}
+
+function moveTo(states, input) {
+    if (!input) {
+        throw new Error("You MUST specify an input on which to move");
+    }
+    var ret = [ ];
+    states.forEach(function(state) {
+        if (state.hasTransitionOn(input)) {
+            ret.push.apply(ret, state.transitions[input]);
+        }
+    });
+    return ret;
+}
+
+function num_cmp(lhs, rhs) {
+    return lhs - rhs;
+}
+
+function getStateName(states) {
+    return _.uniq(states.map(function(state) {
+        return String(state.id);
+    }).sort(), true).join(",");
+}
+
+function isDFAFinalState(dfaNode) {
+    var isFinal = (dfaNode.nfaNodes.filter(function(nfaNode) {
+        return nfaNode.isFinal;
+    }).length > 0);
+    return isFinal;
+}
+
+function toDFA(nfa) {
+    // The ID of NFA -> DFA run. This is incremented every time we
+    // want a fresh epsilon closure since we want previously
+    // considered nodes to be considered again in a new closure, but
+    // not in the same epsilon closure.
+    var visIndex = 1;
+    // Stores the set of DFA states that we have already computed and
+    // processed all outgoing edges for.
+    var DFAStates = { };
+
+    var dfaNodeId = 1;
+    var dfa = null;
+
+	resetIndexes(nfa[0]);
+
+    var q = [ ];
+    var n = new DFANode(dfaNodeId++);
+    var nn;
+    dfa = n;
+    n.nfaNodes = epsilonClosure([ nfa[0] ], visIndex++);
+    n.isFinal = isDFAFinalState(n);
+    q.push(n);
+
+    DFAStates[getStateName(n.nfaNodes)] = n;
+
+    while (q.length != 0) {
+        n = q.shift();
+        var transitionSymbols = _.chain(n.nfaNodes.map(function(nfaNode) {
+            return nfaNode.getTransitionSymbols();
+        })).flatten().uniq(false).value();
+        transitionSymbols.forEach(function(symbol) {
+            var newNodes = moveTo(n.nfaNodes, symbol);
+            newNodes = epsilonClosure(newNodes, visIndex++);
+            var stateName = getStateName(newNodes);
+            if (!DFAStates[stateName]) {
+                // Insert and add to queue since we haven't seen this node before.
+                nn = new DFANode(dfaNodeId++);
+                nn.nfaNodes = newNodes;
+                nn.isFinal = isDFAFinalState(nn);
+                DFAStates[stateName] = nn;
+                q.push(nn);
+            } else {
+                nn = DFAStates[stateName];
+            }
+            n.on(nn, symbol);
+
+        }); // transitionSymbols.forEach(function(symbol)
+
+    } // while (q.length != 0)
+    return dfa;
+}
+
+function RegExpDFA(expression) {
+    this.REnfa = new RegExpNFA(expression);
+    this.dfa = null;
+}
+
+function getCharRanges(charList) {
+    charList.sort();
+    if (charList.length == 0) {
+        return [ ];
+    }
+    var ret = [];
+    var begin = charList[0];
+    var curr = begin;
+    var i;
+    for (i = 1; i < charList.length; ++i) {
+        if (String(charList[i]).charCodeAt(0) == String(curr).charCodeAt(0) + 1) {
+            curr = charList[i];
+        } else {
+            if (begin == curr) {
+                ret.push(begin);
+            } else {
+                ret.push([begin, curr]);
+            }
+            begin = charList[i];
+            curr = begin;
+        }
+    }
+    if (begin == curr) {
+        ret.push(begin);
+    } else {
+        ret.push([begin, curr]);
+    }
+    return ret;
+}
+
+function bucketByDestinationState(transitions) {
+    var nodeIdToTransitions = { };
+    Object.keys(transitions).forEach(function(symbol) {
+        var n = transitions[symbol];
+        if (!nodeIdToTransitions.hasOwnProperty(n.id)) {
+            nodeIdToTransitions[n.id] = [ ];
+        }
+        nodeIdToTransitions[n.id].push(symbol);
+    });
+    return nodeIdToTransitions;
+}
+
+function toPrettyKey(key) {
+    if (key instanceof Array) {
+        assert(key.length == 2);
+        return util.format("[%s-%s]", toPrettyKey(key[0]), toPrettyKey(key[1]));
+    } else {
+        if (String(key).charCodeAt(0) < 32 || String(key).charCodeAt(0) == 127) {
+            return util.format("ASC(%d)", key.charCodeAt(0));
+        } else {
+            return key;
+        }
+    }
+}
+
+function getNodeIdToNodeMap(transitions) {
+    var nodeIdToNode = { };
+    Object.keys(transitions).forEach(function(symbol) {
+        var n = transitions[symbol];
+        nodeIdToNode[n.id] = n;
+    });
+    return nodeIdToNode;
+}
+
+RegExpDFA.prototype = {
+    toDFA: function() {
+	    var nfa = this.REnfa.toNFA();
+        this.dfa = toDFA(nfa);
+        return this.dfa;
+    },
+    toDot: function() {
+	    var dfa = this.toDFA();
+	    resetIndexes(dfa);
+	    var q = [ dfa ];
+	    var dot = [ 'digraph DFA {' ];
+	    while (q.length != 0) {
+	        var top = q.shift();
+	        top.index = 1;
+	        if (top.isFinal) {
+		        dot.push(util.format('  %s[style=bold]', top.id));
+	        }
+	        var keys = Object.keys(top.transitions);
+            var transitions = top.transitions;
+            if (keys.length > 0) {
+                // Compute the complement set
+                var buckets = bucketByDestinationState(top.transitions);
+                var idToNodeMap = getNodeIdToNodeMap(top.transitions);
+                var bKeys = Object.keys(buckets);
+                // console.log("size of buckets:", Object.keys(buckets).length);
+                keys = [ ];
+                transitions = { };
+                bKeys.forEach(function(nodeId) {
+                    var ranges = getCharRanges(buckets[nodeId]);
+                    // console.log("ranges.length:", ranges.length);
+                    var destNode = idToNodeMap[nodeId];
+                    var transitionsKey = ranges.map(function(range) {
+                        // console.log("Range:", toPrettyKey(range));
+                        return toPrettyKey(range);
+                    }).join(",");
+                    transitions[transitionsKey] = destNode;
+                    keys.push(transitionsKey);
+                });
+            }
+	        keys.forEach(function(key) {
+		        var node = transitions[key];
+		        dot.push(util.format('  %s -> %s[label=" %s"]',
+					                 top.id, node.id, key));
+		        if (node.index == -2) {
+			        node.index = 1;
+			        q.push(node);
+		        }
+	        });
+	    } // while (q.length != 0)
+	    dot.push('}');
+	    return dot.join('\n');
+    }
+};
+
+
 exports.RegExpParser = RegExpParser;
 exports.RegExpNFA = RegExpNFA;
 exports.search = search;
+
+// var exp = "(a|b)*b";
+// var exp = "banana|bandana|batman|ball";
+// var exp = "(c?c?c?)*ccc";
+// var exp = "c?c?c?ccc";
+// var exp = "([^c]?[^c]?[^c]?)*ccc";
+// var exp = "([0369]|[258][0369]*[147]|[147]([0369]|[147][0369]*[258])*[258]|[258][0369]*[258]([0369]|[147][0369]*[258])*[258]|[147]([0369]|[147][0369]*[258])*[147][0369]*[147]|[258][0369]*[258]([0369]|[147][0369]*[258])*[147][0369]*[147])*";
+// var REdfa = new RegExpDFA(exp);
+// var dfa = REdfa.toDFA();
+
+// console.log(REdfa.toDot());
