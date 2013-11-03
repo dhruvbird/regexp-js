@@ -17,6 +17,15 @@ Regular Expression Parsing and evaluation in javascript (for fun and education)
 There are unit tests to verify correct operation of the matching algorithms.
 Unit tests to verify correctness of the generated NFA don't yet exist.
 
+## Installing
+
+```bash
+git clone git@github.com:dhruvbird/regexp-js.git
+cd regexp-js
+npm install .
+sudo apt-get install graphviz # To run visualize.js
+```
+
 ## Exercises
 
 1. Add support for character escapes ```\w \W \0 \d and \D``` as mentioned on [this page](http://www.javascriptkit.com/javatutors/redev2.shtml). Requires you to make minor changes to:

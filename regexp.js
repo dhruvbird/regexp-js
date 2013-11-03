@@ -61,6 +61,10 @@ function RegExpParser(expression) {
     this.error = '';
 }
 
+function ParenthesizedNode(node) {
+    this.node = node;
+}
+
 function UnionNode(node1, node2) {
     this.node1 = node1;
     this.node2 = node2;
@@ -148,7 +152,7 @@ SequentialOpsNode.prototype = {
             symNodePair[1].on(nodePair[1]);
             break;
         case '?':
-            symNodePair[0].on(symNodePair[1]);
+            nodePair[0].on(nodePair[1]);
             nodePair[0].on(symNodePair[0]);
             symNodePair[1].on(nodePair[1]);
             break;
@@ -577,11 +581,18 @@ RegExpNFA.prototype = {
 	    this.nfa[1].isFinal = true;
         return this.nfa;
     },
-    toDot: function() {
+    toDot: function(attrs) {
 	    var nfa = this.toNFA();
 	    resetIndexes(nfa[0]);
 	    var q = [ nfa[0] ];
 	    var dot = [ 'digraph NFA {' ];
+        var dotAttrs = [ ];
+        for (var attr in attrs) {
+            dotAttrs.push(util.format('%s=%s', attr, attrs[attr]));
+        }
+        if (dotAttrs.length > 0) {
+            dot.push(util.format('  %s', dotAttrs.join(', ')));
+        }
 	    while (q.length != 0) {
 	        var top = q.shift();
 	        top.index = 1;
@@ -863,13 +874,20 @@ RegExpDFA.prototype = {
         this.dfa = toDFA(nfa);
         return this.dfa;
     },
-    toDot: function() {
+    toDot: function(attrs) {
 	    var dfa = this.toDFA();
 	    resetIndexes(dfa);
 	    var q = [ dfa ];
 	    var dot = [ 'digraph DFA {' ];
+        var dotAttrs = [ ];
+        for (var attr in attrs) {
+            dotAttrs.push(util.format('%s=%s', attr, attrs[attr]));
+        }
+        if (dotAttrs.length > 0) {
+            dot.push(util.format('  %s', dotAttrs.join(', ')));
+        }
 	    while (q.length != 0) {
-	        var top = q.shift();
+            var top = q.shift();
 	        top.index = 1;
 	        if (top.isFinal) {
 		        dot.push(util.format('  %s[style=bold]', top.id));
@@ -914,6 +932,7 @@ RegExpDFA.prototype = {
 
 exports.RegExpParser = RegExpParser;
 exports.RegExpNFA = RegExpNFA;
+exports.RegExpDFA = RegExpDFA;
 exports.search = search;
 
 // var exp = "(a|b)*b";

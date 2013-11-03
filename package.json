@@ -10,7 +10,8 @@
   "repository": "git@github.com:dhruvbird/regexp-js.git",
   "author": "Dhruv Matani",
   "dependencies": {
-    "underscore": "~1.5.2"
+    "underscore": "~1.5.2",
+    "tav": "~0.1.0"
   },
   "devDependencies": {
     "nodeunit": "~0.8.1",
