@@ -4,10 +4,16 @@ var _ = require('underscore');
 var assert = require('assert').ok;
 
 var epsilon = 'ɛ';
-// Create a new NFA node with ID (nodeId)
+// Create a new NFA node. Ids are assigned to nodes later
 function NFANode() {
     // Each element of this.transitions is an array of NFANode(s)
     this.transitions = { };
+    // Always copy the capture set when we move from one thread to
+    // another.
+    this.captures = [ ];
+    // Optional attributes:
+    // id
+    // isFinal
 }
 
 NFANode.prototype = {
@@ -29,8 +35,52 @@ NFANode.prototype = {
             keys.splice(pos, 1);
         }
         return keys;
+    },
+    isCaptureStart: function() {
+        return this.hasOwnProperty('startIndex') && this.startIndex != -2;
+    },
+    isCaptureEnd: function() {
+        return this.hasOwnProperty('endIndex') && this.endIndex != -2;
+    },
+    clone: function(captures) {
+        var nn = new NFANode();
+        return NFANodeCloneHelper(nn, this, captures);
     }
 };
+
+function NFANodeCloneHelper(nn, node, captures) {
+    nn.transitions = node.transitions;
+    if (node.hasOwnProperty('id')) {
+        nn.id = node.id;
+    }
+    if (node.hasOwnProperty('isFinal')) {
+        nn.isFinal = node.isFinal;
+    }
+    // The capture set is deep copied.
+    nn.captures = captures.slice(0);
+    return nn;
+}
+
+function NFACaptureNode(groupNum, startIndex, endIndex) {
+    assert(groupNum == 0 || startIndex != endIndex);
+    assert(startIndex == -2 || endIndex == -2);
+    this.groupNum = groupNum;
+    this.startIndex = startIndex;
+    this.endIndex = endIndex;
+    // Each element of this.transitions is an array of NFANode(s)
+    this.transitions = { };
+    // Always the capture set when we move from one thread to another.
+    this.captures = [ ];
+}
+
+NFACaptureNode.prototype = new NFANode();
+
+NFACaptureNode.prototype.clone = function(captures) {
+    var nn = new NFACaptureNode(this.groupNum,
+                                this.startIndex,
+                                this.endIndex);
+    return NFANodeCloneHelper(nn, this, captures);
+}
 
 function DFANode(id) {
     // Each element of this.transitions is a DFANode
@@ -59,11 +109,49 @@ function RegExpParser(expression) {
     this.index = 0;
     this.expLen = this.expression.length;
     this.error = '';
+    this.groupNum = 1;
 }
 
-function ParenthesizedNode(node) {
+function ParenthesizedNode(groupNum, startIndex, endIndex, node) {
+    this.groupNum = groupNum;
+    this.startIndex = startIndex;
+    this.endIndex = endIndex;
     this.node = node;
 }
+ParenthesizedNode.prototype = {
+    toNFA: function() {
+        var lhs = new NFANode();
+        var rhs = new NFANode();
+        var parenOpen = new NFACaptureNode(this.groupNum, this.startIndex, -2);
+        var parenClose = new NFACaptureNode(this.groupNum, -2, this.endIndex);
+        var npair = this.node.toNFA();
+
+        lhs.on(parenOpen);
+        parenOpen.on(npair[0]);
+
+        npair[1].on(parenClose);
+        parenClose.on(rhs);
+        return [ lhs, rhs ];
+    }
+};
+
+function AnchoredNode(node, leftAnchored, rightAnchored) {
+    this.node = node;
+    this.leftAnchored = leftAnchored;
+    this.rightAnchored = rightAnchored;
+}
+AnchoredNode.prototype = {
+    toNFA: function() {
+        var node = new ParenthesizedNode(0, -1, 1024, this.node);
+        if (!this.leftAnchored) {
+            var opNode = new OpNode('*');
+            var symNode = new SingleChar('.');
+            var acceptAny = new ApplyOpsNode(symNode, opNode);
+            node = new SequenceNode(acceptAny, node);
+        }
+        return node.toNFA();
+    }
+};
 
 function UnionNode(node1, node2) {
     this.node1 = node1;
@@ -231,7 +319,7 @@ function SingleChar(ch) {
 SingleChar.prototype = {
     getCharList: function() {
 	    if (this.ch == '.') {
-            return _.difference(allChars, [ '.' ]);
+            return _.difference(allChars, [ '\n' ]);
 	    }
         return [this.ch];
     },
@@ -307,7 +395,31 @@ RegExpParser.prototype = {
     },
     parse: function() {
 	    this.index = 0;
-	    return this.regexp();
+        this.groupNum = 1;
+        this.error = '';
+        var parsed = this.regexpTopLevel();
+	    return parsed;
+    },
+    regexpTopLevel: function() {
+	    var index = this.index;
+        var leftAnchored = false;
+        var rightAnchored = true;
+        if (this.nextIs('^')) {
+            leftAnchored = true;
+            this.get();
+        }
+        var node = this.regexp();
+        if (this.nextIs('$')) {
+            rightAnchored = true;
+            this.get();
+        }
+        if (this.hasMore()) {
+            this.error(util.format("Premature end of input. Stray '%s' found at index '%d'",
+                                   this.peek(),
+                                   this.index)
+                      );
+        }
+        return new AnchoredNode(node, leftAnchored, rightAnchored);
     },
     regexp: function() {
 	    var index = this.index;
@@ -326,7 +438,8 @@ RegExpParser.prototype = {
 		        }
 		        return new UnionNode(node, node2);
 	        } else {
-		        // Maybe bracketed subexpression.
+		        // Maybe bracketed subexpression or end of RE with a $
+		        // at the end??
 		        return node;
 	        }
 	    } else {
@@ -407,6 +520,8 @@ RegExpParser.prototype = {
 	    var index = this.index;
 	    var nextToken = this.peek();
 	    var node = null;
+        var parenStartIndex, parenEndIndex;
+        var groupNum;
 	    switch (nextToken) {
 	    case '[':
 	        this.get();
@@ -420,14 +535,22 @@ RegExpParser.prototype = {
 	        this.get();
 	        break;
 	    case '(':
+            parenStartIndex = this.index;
+            groupNum = this.groupNum++;
 	        this.get();
 	        node = this.regexp();
+            if (!node) break;
 	        if (!this.nextIs(')')) {
 		        // Parse error
 		        this.error = "Expected ')', got '" + this.peek() + "'";
 		        this.index = index;
 		        return null;
 	        }
+            parenEndIndex = this.index;
+            node = new ParenthesizedNode(groupNum,
+                                         parenStartIndex,
+                                         parenEndIndex,
+                                         node);
 	        this.get();
 	        break;
 	    default:
@@ -602,9 +725,15 @@ RegExpNFA.prototype = {
 	        var keys = Object.keys(top.transitions);
 	        keys.forEach(function(key) {
 		        var nodes = top.transitions[key];
+                var label = key;
+                if (top.isCaptureStart()) {
+                    label = util.format("%s[(]", key);
+                } else if (top.isCaptureEnd()) {
+                    label = util.format("%s[)]", key);
+                }
 		        nodes.forEach(function(n) {
 		            dot.push(util.format('  %s -> %s[label=" %s"]',
-					                     top.id, n.id, key));
+					                     top.id, n.id, label));
 		            if (n.index == -2) {
 			            n.index = 1;
 			            q.push(n);
@@ -617,6 +746,16 @@ RegExpNFA.prototype = {
     }
 };
 
+function CaptureRange(start, end) {
+    this.start = start;
+    this.end = end;
+}
+CaptureRange.prototype = {
+    clone: function() {
+        return new CaptureRange(this.start, this.end);
+    }
+}
+
 /**
  * Add 'node' to the queue and expands all transitions originating
  * from 'node' on epsilon (no input). Adds all the expanded nodes to
@@ -626,24 +765,39 @@ RegExpNFA.prototype = {
  * any more or all nodes have been added.
  *
  */
-function addNode(node, q, addedNodes) {
+function addNode(node, q, addedNodes, strIndex) {
     if (addedNodes[node.id]) {
         return;
     }
+    // console.log(util.format("addNode(%d): captures:", node.id, node.captures));
     addedNodes[node.id] = node;
     q.push(node)
+
     if (!node.transitions.hasOwnProperty(epsilon)) {
         return;
     }
     node.transitions[epsilon].forEach(function(n) {
-        addNode(n, q, addedNodes);
+        var nn = n.clone(node.captures);
+        if (node.isCaptureStart()) {
+            // console.log("setting captures[", node.groupNum, "] to a valid object");
+            nn.captures[node.groupNum] = new CaptureRange(strIndex, -1);
+        } else if (node.isCaptureEnd()) {
+            // console.log("node.groupNum:", node.groupNum, "node.id:", node.id);
+            // console.log("nn.captures:", nn.captures);
+            assert(nn.captures[node.groupNum].start <= strIndex);
+            nn.captures[node.groupNum].end = strIndex;
+        }
+        addNode(nn, q, addedNodes, strIndex);
     });
 }
 
-function addMatches(matches, addedNodes, i) {
+function addMatches(matches, captures, addedNodes, i) {
     addedNodes.forEach(function(node) {
         if (node.isFinal) {
             matches.push(i);
+            captures.push(node.captures.map(function(c) {
+                return c.clone();
+            }));
         }
     });
 }
@@ -653,7 +807,7 @@ function addMatches(matches, addedNodes, i) {
  * searching algorithm by maintaining 2 queues.
  *
  */
-function searchNFA(str, nfa, matches) {
+function searchNFA(str, nfa, matches, captures) {
     var top;
     var q1 = [ ], q2 = [ ];
     var q = q1;
@@ -661,8 +815,8 @@ function searchNFA(str, nfa, matches) {
     var j;
     var addedNodes = [ ];
 
-    addNode(nfa, q, addedNodes);
-    addMatches(matches, addedNodes, i);
+    addNode(nfa.clone([]), q, addedNodes, -1);
+    addMatches(matches, captures, addedNodes, i);
 
     for (i = 0; i < str.length; ++i) {
         addedNodes = [ ];
@@ -670,11 +824,11 @@ function searchNFA(str, nfa, matches) {
         for (j = 0; j < q.length; ++j) {
             if (q[j].transitions.hasOwnProperty(str[i])) {
                 q[j].transitions[str[i]].forEach(function(n) {
-                    addNode(n, otherq, addedNodes);
+                    addNode(n.clone(q[j].captures), otherq, addedNodes, i);
                 });
             }
         }
-        addMatches(matches, addedNodes, i);
+        addMatches(matches, captures, addedNodes, i);
         q.splice(0);
         q = otherq;
     }
@@ -682,20 +836,21 @@ function searchNFA(str, nfa, matches) {
 
 function search(str, FSA) {
     var matches = [];
+    var captures = [];
     if (FSA.length == 0) {
         throw new Error("Expected a FSA, got an empty array");
     }
     if (FSA[0] instanceof NFANode) {
-        resetIndexes(FSA[0]);
-        FSA[0].index = -1;
-        searchNFA(str, FSA[0], matches);
+        // resetIndexes(FSA[0]);
+        // FSA[0].index = -1;
+        searchNFA(str, FSA[0], matches, captures);
     } else if (FSA[0] instanceof DFANode) {
     } else {
         throw new Error(
             util.format("Expected NFANode or DFANode; Got: %s",
                         (FSA[0] ? FSA[0].constructor.name : "undefined")));
     }
-    return matches;
+    return { matches: matches, captures: captures };
 }
 
 function epsilonClosureRecursive(states, visIndex, ret) {
@@ -945,3 +1100,16 @@ exports.search = search;
 // var dfa = REdfa.toDFA();
 
 // console.log(REdfa.toDot());
+
+var exp = "^((ab)*)";
+var REnfa = new RegExpNFA(exp);
+var nfa = REnfa.toNFA();
+assert(!!nfa);
+
+console.log("nfa:", nfa);
+
+var mc = search("abab", nfa)
+console.log(mc);
+console.log(JSON.stringify(mc.captures, null, 4));
+
+// console.log(REnfa.toDot());
