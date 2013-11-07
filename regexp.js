@@ -666,6 +666,10 @@ function processNode(node, nodeNum) {
     return nodeNum;
 }
 
+/**
+ * Assigns numbers (Ids) to nodes in an nfa
+ *
+ */
 function numberNodes(nfa, nodeNum) {
     var keys;
     nodeNum = processNode(nfa[0], nodeNum);
@@ -746,6 +750,14 @@ RegExpNFA.prototype = {
     }
 };
 
+/**
+ * Holds information about a sub-match capture and indicates the range
+ * of input that matched that capture.
+ *
+ * The actual index in the input is [start+1..end] if start != end. If
+ * start == end, then the capture is an empty match.
+ *
+ */
 function CaptureRange(start, end) {
     this.start = start;
     this.end = end;
@@ -757,12 +769,15 @@ CaptureRange.prototype = {
 }
 
 /**
- * Add 'node' to the queue and expands all transitions originating
- * from 'node' on epsilon (no input). Adds all the expanded nodes to
- * queue 'q'. 'addedNodes' is a map that indicates whether the node
- * 'node' has already been added to the queue 'q'. This function
- * recursively expands all epsilon transitions till it can not expand
- * any more or all nodes have been added.
+ * Add 'node' to the queue and expands all epsilon transitions
+ * originating from 'node'. It the applies recursively the same
+ * operation on all the expanded nodes.
+ *
+ * 'addedNodes' is a map that indicates whether the node
+ * 'node' has already been added to the queue 'q'.
+ *
+ * This function recursively expands all epsilon transitions till it
+ * can not expand any more or all nodes have been added.
  *
  */
 function addNode(node, q, addedNodes, strIndex) {
@@ -803,8 +818,17 @@ function addMatches(matches, captures, addedNodes, i) {
 }
 
 /**
- * Searches string 'str' using automation 'nfa' using Thompson's O(nm)
+ * Searches string 'str' using automation 'nfa' using Thompson's
  * searching algorithm by maintaining 2 queues.
+ *
+ * Since we also support sub-match captures, the actual running time
+ * is O(nmc), where:
+ *
+ * n -> length of the input string
+ * m -> number of states in the NFA for the RE
+ * c -> number of capture expressions in the RE
+ *
+ * The space requirement is O(nc).
  *
  */
 function searchNFA(str, nfa, matches, captures) {

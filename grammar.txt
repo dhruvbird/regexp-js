@@ -1,0 +1,39 @@
+regexpTopLevel ::= '^' regexp '$'
+                 | '^' regexp
+                 | regexp '$'
+                 | regexp
+
+regexp ::= regexpNoUnion '|' regexp
+         | regexpNoUnion
+
+regexpNoUnion ::= regexpNoConcat regexpNoUnion
+                | regexpNoConcat
+                | { empty }
+
+regexpNoConcat ::= regexpBasic regexpOp
+
+regexpOp ::= '*' regexpOp
+           | '+' regexpOp
+           | '?' regexpOp
+           | { empty }
+
+regexpBasic ::= '[' charClass ']'
+              | singleChar
+              | singleEscapedChar
+              | '(' regexp ')'
+
+charClass ::= '^' charRangesOrSingles
+            | charRangesOrSingles
+
+charRangesOrSingles ::= singleChar charRangeOrSingles
+                      | singleEscapedChar charRangeOrSingles
+                      | charRange charRangeOrSingles
+                      | singleChar
+                      | singleEscapedChar
+                      | charRange
+
+charRange ::= singleChar '-' singleChar
+
+singleChar ::= a, b, c, ..., A, B, C, ... 0, 1, 2, ..., !, @, #, ..., '.'
+
+singleEscapedChar ::= '\' { s, S, \, (, ), {, }, [, ], ^, ., -, {space}, n, t }
