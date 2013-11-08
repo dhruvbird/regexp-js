@@ -3,83 +3,152 @@ var util = require('util');
 var _ = require('underscore');
 var assert = require('assert').ok;
 
-var epsilon = 'ɛ';
+var MIN_CHAR=String.fromCharCode(0);
+var MAX_CHAR=String.fromCharCode(65535);
+var FLAG_UNIFIED = 1;
+var FLAG_CAPTURE_ALL = 1;
+
+var epsilonPrintable = "\u03F5";
+var epsilon = 'eps';
 // Create a new NFA node. Ids are assigned to nodes later
 function NFANode() {
-    // Each element of this.transitions is an array of NFANode(s)
-    this.transitions = { };
+    // Each element of this.transitions is an object of the form:
+    // { cmpKey: ub+lb, key: { lb: .., ub: .. }, nodes: [ .. ] }
+    this.transitions = [ ];
+    this.epsilonTransitions = [ ];
     // Always copy the capture set when we move from one thread to
     // another.
     this.captures = [ ];
     // Optional attributes:
-    // id
-    // isFinal
+    this.id = -2;
+    this.isFinal = false;
+    this.groupNum = -2;
+    this.startIndex = -2;
+    this.endIndex = -2;
 }
 
 NFANode.prototype = {
     on: function(toNode, input) {
-        input = input || epsilon;
-        if (!this.transitions.hasOwnProperty(input)) {
-            this.transitions[input] = [ ];
+        var isEpsilonTransition = !input || input == epsilon;
+        if (isEpsilonTransition) {
+            this.epsilonTransitions.push(toNode);
+            return this;
         }
-        this.transitions[input].push(toNode);
+        // console.log("Got Transition on:", input);
+        if (typeof(input) === "string") {
+            var tmp = { lb: input, ub: input };
+            input = tmp;
+        }
+        // console.log(input);
+        var cmpKey = input.lb + input.ub;
+        // Assume that we don't have multiple transitions on the same
+        // input. That should be performed using epsilon transitions.
+        this.transitions.push({ cmpKey: cmpKey,
+                                key: input,
+                                nodes: [ toNode ]
+                              });
         return this;
     },
+    getTransitionsOn: function(input) {
+        if (input == epsilon) {
+            return this.epsilonTransitions;
+        }
+        var i;
+        var ret = [ ];
+        for (i = 0; i < this.transitions.length; ++i) {
+            var tr = this.transitions[i];
+            if (input >= tr.key.lb && input <= tr.key.ub) {
+                if (ret.length === 0) {
+                    ret = tr.nodes;
+                } else {
+                    ret = ret.concat(tr.nodes);
+                }
+            }
+        }
+        return ret;
+    },
     hasTransitionOn: function(input) {
-        return this.transitions.hasOwnProperty(input);
+        return this.getTransitionsOn(input).length > 0;
+    },
+    numTransitionSymbols: function() {
+        // The number of distinct characters (code-points) on which
+        // there is a transition from this node, outwards.
+        var numSyms = 0;
+        var i;
+        for (i = 0; i < this.transitions.length; ++i) {
+            var tr = this.transitions[i];
+            numSyms += (tr.ub.charCodeAt(0) - tr.lb.charCodeAt(0) + 1);
+        }
+        return numSyms;
     },
     getTransitionSymbols: function() {
-        var keys = Object.keys(this.transitions);
-        var pos = keys.indexOf(epsilon);
-        if (pos != -1) {
-            keys.splice(pos, 1);
+        // Return all transition symbols except for epsilon.
+        //
+        // Note: This can be a fairly expensive function, so always
+        // use the cheaper numTransitionSymbols() before calling this
+        // function instead of calling this function and checking the
+        // length of the returned array.
+        var syms = [ ];
+        var i, j;
+        for (i = 0; i < this.transitions.length; ++i) {
+            var tr = this.transitions[i];
+            for (j = tr.lb; j <= tr.ub; ++j) {
+                syms.push(j);
+            }
         }
-        return keys;
+        return syms;
+    },
+    getAllTransitionNodes: function() {
+        // Returns all nodes that can be reached from the current node
+        // with a single hop.
+        var nodes = [ ];
+        var i;
+        for (i = 0; i < this.transitions.length; ++i) {
+            var tr = this.transitions[i];
+            nodes = nodes.concat(tr.nodes);
+        }
+        nodes = nodes.concat(this.epsilonTransitions);
+        return nodes;
+    },
+    getAllTransitions: function() {
+        var tr = [ ];
+        tr = tr.concat(this.transitions);
+        tr.push({ keyCmp: epsilonPrintable + epsilonPrintable,
+                  key: { lb: epsilonPrintable, ub: epsilonPrintable },
+                  nodes: this.epsilonTransitions
+                });
+        return tr;
     },
     isCaptureStart: function() {
-        return this.hasOwnProperty('startIndex') && this.startIndex != -2;
+        return this.startIndex != -2;
     },
     isCaptureEnd: function() {
-        return this.hasOwnProperty('endIndex') && this.endIndex != -2;
+        return this.endIndex != -2;
     },
     clone: function(captures) {
         var nn = new NFANode();
-        return NFANodeCloneHelper(nn, this, captures);
+        var node = this;
+        nn.transitions = node.transitions;
+        nn.epsilonTransitions = node.epsilonTransitions;
+        nn.id = node.id;
+        nn.isFinal = node.isFinal;
+        nn.groupNum = node.groupNum;
+        nn.startIndex = node.startIndex;
+        nn.endIndex = node.endIndex;
+        // The capture set is deep copied.
+        nn.captures = captures.slice(0);
+        return nn;
     }
 };
-
-function NFANodeCloneHelper(nn, node, captures) {
-    nn.transitions = node.transitions;
-    if (node.hasOwnProperty('id')) {
-        nn.id = node.id;
-    }
-    if (node.hasOwnProperty('isFinal')) {
-        nn.isFinal = node.isFinal;
-    }
-    // The capture set is deep copied.
-    nn.captures = captures.slice(0);
-    return nn;
-}
 
 function NFACaptureNode(groupNum, startIndex, endIndex) {
     assert(groupNum == 0 || startIndex != endIndex);
     assert(startIndex == -2 || endIndex == -2);
-    this.groupNum = groupNum;
-    this.startIndex = startIndex;
-    this.endIndex = endIndex;
-    // Each element of this.transitions is an array of NFANode(s)
-    this.transitions = { };
-    // Always the capture set when we move from one thread to another.
-    this.captures = [ ];
-}
-
-NFACaptureNode.prototype = new NFANode();
-
-NFACaptureNode.prototype.clone = function(captures) {
-    var nn = new NFACaptureNode(this.groupNum,
-                                this.startIndex,
-                                this.endIndex);
-    return NFANodeCloneHelper(nn, this, captures);
+    var captureNode = new NFANode();
+    captureNode.groupNum = groupNum;
+    captureNode.startIndex = startIndex;
+    captureNode.endIndex = endIndex;
+    return captureNode;
 }
 
 function DFANode(id) {
@@ -143,6 +212,7 @@ function AnchoredNode(node, leftAnchored, rightAnchored) {
 AnchoredNode.prototype = {
     toNFA: function() {
         var node = new ParenthesizedNode(0, -1, 1024, this.node);
+        // console.log("Generated group 0");
         if (!this.leftAnchored) {
             var opNode = new OpNode('*');
             var symNode = new SingleChar('.');
@@ -256,9 +326,13 @@ SequentialOpsNode.prototype = {
     }
 };
 
-function NFANodeFromCharList(charList) {
+function NFANodeFromCharList(charList, flags) {
     var lhs = new NFANode();
     var rhs = new NFANode();
+    if (!(flags & FLAG_UNIFIED)) {
+        charList = unifiedCharList(charList);
+    }
+    // console.log("Unified charlist:", charList);
     for (var i = 0; i < charList.length; ++i) {
         lhs.on(rhs, charList[i]);
     }
@@ -282,31 +356,87 @@ CharListNode.prototype = {
     }
 };
 
+function unifiedCharList(charList) {
+    var unified = [ ];
+    var i;
+    var inflections = [ ];
+    var started = [ ];
+    var TYPE_START = 1;
+    var TYPE_END = 2;
+    for (i = 0; i < charList.length; ++i) {
+        charList.id = i;
+        inflections.push({ ch: charList[i].lb, id: i, type: TYPE_START });
+        inflections.push({ ch: charList[i].ub, id: i, type: TYPE_END   });
+        started[i] = false;
+    }
+    inflections.sort(function(lhs, rhs) {
+        if (lhs.ch == rhs.ch) {
+            return lhs.type - rhs.type;
+        }
+        return lhs.ch - rhs.ch;
+    });
+    // console.log("inflections:", inflections);
+    var stk = [ ];
+    var point;
+    for (i = 0; i < inflections.length; ++i) {
+        point = inflections[i];
+        if (!started[point.id]) {
+            stk.push(point.ch);
+            started[point.id] = true;
+        } else {
+            if (stk.length == 1) {
+                unified.push({ lb: stk[0], ub: point.ch });
+            }
+            stk.pop();
+        }
+    }
+    return unified;
+}
+
+function negateCharList(charList) {
+    // First find all the inclusive ranges (since input ranges may
+    // overlap), and then negate the inclusive range to get the
+    // negated range.
+    var negated = [ ];
+    var i;
+    var ch = MIN_CHAR;
+    var unified = unifiedCharList(charList);
+    for (i = 0; i < unified.length; ++i) {
+        var nextCh = String.fromCharCode(unified[i].ub.charCodeAt(0) + 1)
+        var endCh = String.fromCharCode(unified[i].lb.charCodeAt(0) - 1)
+        if (unified[i].lb > ch) {
+            negated.push({ lb: ch, ub: endCh });
+        }
+        ch = nextCh;
+    }
+    if (ch < MAX_CHAR) {
+        negated.push({ lb: ch, ub: MAX_CHAR });
+    }
+    return negated;
+}
+
 function CharRangeNode(lhs, rhs) {
     this.lhs = lhs.ch;
     this.rhs = rhs.ch;
-    this.type = 'charrange';
 }
 CharRangeNode.prototype = {
     getCharList: function() {
-        var ret = [ ];
-        var i;
+        var ret;
         if (this.lhs.toLowerCase() === this.lhs && this.rhs.toLowerCase() === this.rhs) {
             if (this.lhs > this.rhs) {
                 throw new Error(util.format("CharRangeNode: %s not <= %s", this.lhs, this.rhs));
             }
-            for (i = this.lhs.charCodeAt(0); i <= this.rhs.charCodeAt(0); ++i) {
-                ret.push(String.fromCharCode(i));
-            }
+            ret = { lb: this.lhs, ub: this.rhs };
         } else if (this.lhs.toUpperCase() === this.lhs && this.rhs.toUpperCase() === this.rhs) {
             if (this.lhs > this.rhs) {
                 throw new Error(util.format("CharRangeNode: %s not <= %s", this.lhs, this.rhs));
             }
-            for (i = this.lhs.charCodeAt(0); i <= this.rhs.charCodeAt(0); ++i) {
-                ret.push(String.fromCharCode(i));
-            }
+            ret = { lb: this.lhs, ub: this.rhs };
+        } else {
+            throw new Error("Character range must be in the same case (lower or upper)");
         }
-        return ret;
+        // console.log("Returning:", ret);
+        return [ ret ];
     },
     toNFA: function() {
         return NFANodeFromCharList(this.getCharList());
@@ -319,9 +449,9 @@ function SingleChar(ch) {
 SingleChar.prototype = {
     getCharList: function() {
 	    if (this.ch == '.') {
-            return _.difference(allChars, [ '\n' ]);
+            return negateCharList([ { lb: '\n', ub: '\n' } ]);
 	    }
-        return [this.ch];
+        return [ { lb: this.ch, ub: this.ch } ];
     },
     toNFA: function() {
 	    var charList = this.getCharList();
@@ -344,6 +474,14 @@ do {
     }
 } while (false);
 
+function charsToCharList(chars) {
+    var ret = [ ];
+    var i;
+    for (i = 0; i < chars.length; ++i) {
+        ret.push({ lb: chars[i], ub: chars[i] });
+    }
+    return ret;
+}
 
 function EscapedChar(ch) {
     this.ch = ch;
@@ -353,13 +491,13 @@ EscapedChar.prototype = {
         var ret = [];
         switch (this.ch) {
         case 's':
-            ret = wsChars;
+            ret = charsToCharList(wsChars);
             break;
         case 'S':
-            ret = _.difference(allChars, wsChars);
+            ret = negateCharList(charsToCharList(wsChars));
             break;
         default:
-            ret = [ this.ch ];
+            ret = [ { lb: this.ch, ub: this.ch } ];
             break;
         }
         return ret;
@@ -375,8 +513,8 @@ function NegationNode(node) {
 }
 NegationNode.prototype = {
     toNFA: function() {
-        var charList = _.difference(allChars, this.node.getCharList());
-        return NFANodeFromCharList(charList);
+        var charList = negateCharList(this.node.getCharList());
+        return NFANodeFromCharList(charList, FLAG_UNIFIED);
     }
 };
 
@@ -414,10 +552,12 @@ RegExpParser.prototype = {
             this.get();
         }
         if (this.hasMore()) {
-            this.error(util.format("Premature end of input. Stray '%s' found at index '%d'",
-                                   this.peek(),
-                                   this.index)
-                      );
+            this.error = util.format(
+                "Premature end of input. Stray '%s' found at index '%d'",
+                this.peek(),
+                this.index
+            );
+            return null;
         }
         return new AnchoredNode(node, leftAnchored, rightAnchored);
     },
@@ -652,25 +792,22 @@ function RegExpNFA(expression) {
 }
 
 function processNode(node, nodeNum) {
-    if (node.id) {
+    if (node.id != -2) {
 	    return nodeNum;
     }
     node.id = nodeNum++;
-    var keys = Object.keys(node.transitions);
-    keys.forEach(function(key) {
-	    var nodes = node.transitions[key];
-	    nodes.forEach(function(n) {
-	        nodeNum = processNode(n, nodeNum);
-	    });
+    var children = node.getAllTransitionNodes(); // Object.keys(node.transitions);
+    children.forEach(function(n) {
+	    nodeNum = processNode(n, nodeNum);
     });
     return nodeNum;
 }
 
 /**
- * Assigns numbers (Ids) to nodes in an nfa
+ * Label (assigns numbers) [ids] to nodes in a finite automaton.
  *
  */
-function numberNodes(nfa, nodeNum) {
+function labelNodes(nfa, nodeNum) {
     var keys;
     nodeNum = processNode(nfa[0], nodeNum);
     nodeNum = processNode(nfa[1], nodeNum);
@@ -684,19 +821,13 @@ function resetIndexes(node) {
         top = q.shift();
 	    top.index = -2;
         // Process child nodes
-	    var keys = Object.keys(top.transitions);
-	    keys.forEach(function(key) {
-		    var nodes = top.transitions[key];
-            if (!(nodes instanceof Array)) {
-                nodes = [ nodes ];
+        var children = top.getAllTransitionNodes();
+        children.forEach(function(n) {
+            if (!n.hasOwnProperty('index') || n.index != -2) {
+                n.index = -2;
+                q.push(n);
             }
-		    nodes.forEach(function(n) {
-                if (!n.hasOwnProperty('index') || n.index != -2) {
-                    n.index = -2;
-                    q.push(n);
-                }
-		    });
-	    });
+        });
 	} // while (q.length != 0)
 }
 
@@ -704,7 +835,7 @@ RegExpNFA.prototype = {
     toNFA: function() {
 	    var parsed = this.parser.parse();
         this.nfa = parsed.toNFA();
-	    numberNodes(this.nfa, 1);
+	    labelNodes(this.nfa, 1);
 	    this.nfa[1].isFinal = true;
         return this.nfa;
     },
@@ -726,19 +857,21 @@ RegExpNFA.prototype = {
 	        if (top.isFinal) {
 		        dot.push(util.format('  %s[style=bold]', top.id));
 	        }
-	        var keys = Object.keys(top.transitions);
-	        keys.forEach(function(key) {
-		        var nodes = top.transitions[key];
-                var label = key;
+            var transitions = top.getAllTransitions();
+	        transitions.forEach(function(tr) {
+                var keyRange = tr.key;
+                var nodes = tr.nodes;
+
+                var label = toPrettyKey(keyRange);
                 if (top.isCaptureStart()) {
-                    label = util.format("%s[(]", key);
+                    label = util.format("%s[%s (]", label, top.groupNum);
                 } else if (top.isCaptureEnd()) {
-                    label = util.format("%s[)]", key);
+                    label = util.format("%s[%s )]", label, top.groupNum);
                 }
 		        nodes.forEach(function(n) {
 		            dot.push(util.format('  %s -> %s[label=" %s"]',
 					                     top.id, n.id, label));
-		            if (n.index == -2) {
+                    if (n.index == -2) {
 			            n.index = 1;
 			            q.push(n);
 		            }
@@ -767,6 +900,21 @@ CaptureRange.prototype = {
         return new CaptureRange(this.start, this.end);
     }
 }
+function leftmostLongest(cr1, cr2) {
+    if (cr1.lb == cr2.lb) {
+        if (cr2.ub > cr1.ub) {
+            return 2;
+        } else {
+            return 1;
+        }
+    } else {
+        if (cr1.lb < cr2.lb) {
+            return 1;
+        } else {
+            return 2;
+        }
+    }
+}
 
 /**
  * Add 'node' to the queue and expands all epsilon transitions
@@ -788,11 +936,15 @@ function addNode(node, q, addedNodes, strIndex) {
     addedNodes[node.id] = node;
     q.push(node)
 
-    if (!node.transitions.hasOwnProperty(epsilon)) {
+    if (!node.hasTransitionOn(epsilon)) {
         return;
     }
-    node.transitions[epsilon].forEach(function(n) {
-        var nn = n.clone(node.captures);
+    var tr = node.getTransitionsOn(epsilon);
+    var i, n, nn;
+    for (i = 0; i < tr.length; ++i) {
+        n = tr[i];
+        // console.log(util.format("Expanding node# %d", n.id));
+        nn = n.clone(node.captures);
         if (node.isCaptureStart()) {
             // console.log("setting captures[", node.groupNum, "] to a valid object");
             nn.captures[node.groupNum] = new CaptureRange(strIndex, -1);
@@ -803,18 +955,38 @@ function addNode(node, q, addedNodes, strIndex) {
             nn.captures[node.groupNum].end = strIndex;
         }
         addNode(nn, q, addedNodes, strIndex);
-    });
+    }
 }
 
-function addMatches(matches, captures, addedNodes, i) {
-    addedNodes.forEach(function(node) {
-        if (node.isFinal) {
-            matches.push(i);
-            captures.push(node.captures.map(function(c) {
-                return c.clone();
-            }));
+function cloneCaptures(captures) {
+    var newCaptures = [];
+    for (j = 0; j < captures.length; ++j) {
+        if (captures[j]) {
+            newCaptures[j] = captures[j].clone();
         }
-    });
+    }
+    return newCaptures;
+}
+
+function addCaptures(captures, addedNodes, strIndex, flags) {
+    var i, j, node;
+    for (i = 0; i < addedNodes.length; ++i) {
+        node = addedNodes[i];
+        if (!(node && node.isFinal)) {
+            continue;
+        }
+        // console.log("Len capTures:", node.captures.length);
+        if (flags & FLAG_CAPTURE_ALL) {
+            captures.push(cloneCaptures(node.captures));
+        } else {
+            if ((captures.length > 0 &&
+                 (leftmostLongest(captures[0], node.captures[0]) == 2)) ||
+                (captures.length === 0)) {
+                // console.log("Before cloning. Captures:", node.captures);
+                captures[0] = cloneCaptures(node.captures);
+            }
+        }
+    }
 }
 
 /**
@@ -831,35 +1003,39 @@ function addMatches(matches, captures, addedNodes, i) {
  * The space requirement is O(nc).
  *
  */
-function searchNFA(str, nfa, matches, captures) {
+function searchNFA(str, nfa, captures, flags) {
     var top;
     var q1 = [ ], q2 = [ ];
     var q = q1;
     var i = -1;
     var j;
+    var k;
     var addedNodes = [ ];
 
     addNode(nfa.clone([]), q, addedNodes, -1);
-    addMatches(matches, captures, addedNodes, i);
+    addCaptures(captures, addedNodes, i, flags);
 
     for (i = 0; i < str.length; ++i) {
         addedNodes = [ ];
+        // console.log("Expanding for:", str[i], ", i:", i);
+        // console.log("q.length:", q.length);
         var otherq = (q == q1 ? q2 : q1);
         for (j = 0; j < q.length; ++j) {
-            if (q[j].transitions.hasOwnProperty(str[i])) {
-                q[j].transitions[str[i]].forEach(function(n) {
-                    addNode(n.clone(q[j].captures), otherq, addedNodes, i);
-                });
+            var transitions = q[j].getTransitionsOn(str[i]);
+            // console.log("id:", q[j].id, "transitions.length:", transitions.length);
+            for (k = 0; k < transitions.length; ++k) {
+                var n = transitions[k];
+                addNode(n.clone(q[j].captures), otherq, addedNodes, i);
             }
         }
-        addMatches(matches, captures, addedNodes, i);
+        addCaptures(captures, addedNodes, i, flags);
         q.splice(0);
         q = otherq;
     }
 }
 
-function search(str, FSA) {
-    var matches = [];
+function search(str, FSA, flags) {
+    flags = flags || 0;
     var captures = [];
     if (FSA.length == 0) {
         throw new Error("Expected a FSA, got an empty array");
@@ -867,14 +1043,15 @@ function search(str, FSA) {
     if (FSA[0] instanceof NFANode) {
         // resetIndexes(FSA[0]);
         // FSA[0].index = -1;
-        searchNFA(str, FSA[0], matches, captures);
+        searchNFA(str, FSA[0], captures, flags);
+        // console.log("CAP (length):", captures.length);
     } else if (FSA[0] instanceof DFANode) {
     } else {
         throw new Error(
             util.format("Expected NFANode or DFANode; Got: %s",
                         (FSA[0] ? FSA[0].constructor.name : "undefined")));
     }
-    return { matches: matches, captures: captures };
+    return captures;
 }
 
 function epsilonClosureRecursive(states, visIndex, ret) {
@@ -885,7 +1062,7 @@ function epsilonClosureRecursive(states, visIndex, ret) {
         state.index = visIndex;
         ret.push(state);
         if (state.hasTransitionOn(epsilon)) {
-            epsilonClosureRecursive(state.transitions[epsilon], visIndex, ret);
+            epsilonClosureRecursive(state.getTransitionsOn(epsilon), visIndex, ret);
         }
     });
 }
@@ -903,7 +1080,7 @@ function moveTo(states, input) {
     var ret = [ ];
     states.forEach(function(state) {
         if (state.hasTransitionOn(input)) {
-            ret.push.apply(ret, state.transitions[input]);
+            ret.push.apply(ret, state.getTransitionsOn(input));
         }
     });
     return ret;
@@ -1026,12 +1203,16 @@ function bucketByDestinationState(transitions) {
 }
 
 function toPrettyKey(key) {
-    if (key instanceof Array) {
+    if (key.lb && key.ub) {
+        return toPrettyKey([key.lb, key.ub]);
+    } else if (key instanceof Array) {
         assert(key.length == 2);
+        if (key[0] == key[1]) return toPrettyKey(key[0]);
         return util.format("[%s-%s]", toPrettyKey(key[0]), toPrettyKey(key[1]));
     } else {
-        if (String(key).charCodeAt(0) < 32 || String(key).charCodeAt(0) == 127) {
-            return util.format("ASC(%d)", key.charCodeAt(0));
+        if (key != epsilonPrintable &&
+            (String(key).charCodeAt(0) < 32 || String(key).charCodeAt(0) > 126)) {
+            return util.format("CP(%d)", key.charCodeAt(0));
         } else {
             return key;
         }
@@ -1113,27 +1294,31 @@ exports.RegExpParser = RegExpParser;
 exports.RegExpNFA = RegExpNFA;
 exports.RegExpDFA = RegExpDFA;
 exports.search = search;
+exports.FLAG_CAPTURE_ALL = FLAG_CAPTURE_ALL;
 
-// var exp = "(a|b)*b";
-// var exp = "banana|bandana|batman|ball";
-// var exp = "(c?c?c?)*ccc";
-// var exp = "c?c?c?ccc";
-// var exp = "([^c]?[^c]?[^c]?)*ccc";
-// var exp = "([0369]|[258][0369]*[147]|[147]([0369]|[147][0369]*[258])*[258]|[258][0369]*[258]([0369]|[147][0369]*[258])*[258]|[147]([0369]|[147][0369]*[258])*[147][0369]*[147]|[258][0369]*[258]([0369]|[147][0369]*[258])*[147][0369]*[147])*";
-// var REdfa = new RegExpDFA(exp);
-// var dfa = REdfa.toDFA();
+if (require.main === module) {
+    // var exp = "(a|b)*b";
+    // var exp = "banana|bandana|batman|ball";
+    // var exp = "(c?c?c?)*ccc";
+    // var exp = "c?c?c?ccc";
+    // var exp = "([^c]?[^c]?[^c]?)*ccc";
+    // var exp = "([0369]|[258][0369]*[147]|[147]([0369]|[147][0369]*[258])*[258]|[258][0369]*[258]([0369]|[147][0369]*[258])*[258]|[147]([0369]|[147][0369]*[258])*[147][0369]*[147]|[258][0369]*[258]([0369]|[147][0369]*[258])*[147][0369]*[147])*";
+    // var REdfa = new RegExpDFA(exp);
+    // var dfa = REdfa.toDFA();
 
-// console.log(REdfa.toDot());
+    // console.log(REdfa.toDot());
 
-var exp = "^((ab)*)";
-var REnfa = new RegExpNFA(exp);
-var nfa = REnfa.toNFA();
-assert(!!nfa);
+    // var exp = "^((ab)*)";
+    var exp = "^.*x|(a*)"
+    var REnfa = new RegExpNFA(exp);
+    var nfa = REnfa.toNFA();
+    assert(!!nfa);
 
-console.log("nfa:", nfa);
+    console.log("nfa:", nfa);
 
-var mc = search("abab", nfa)
-console.log(mc);
-console.log(JSON.stringify(mc.captures, null, 4));
+    var mc = search("aax", nfa)
+    console.log(mc);
+    console.log(JSON.stringify(mc.captures, null, 4));
 
-// console.log(REnfa.toDot());
+    // console.log(REnfa.toDot());
+}
