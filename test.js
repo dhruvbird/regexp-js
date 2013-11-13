@@ -28,6 +28,22 @@ function testMatches(expression, str, matches) {
     this.done();
 }
 
+function testMatch(expression, str, expectedCaptures) {
+    var nfaGenerator = new re.RegExpNFA(expression);
+    var nfa = nfaGenerator.toNFA();
+    var flags = 0;
+    var captures = re.search(str, nfa, flags);
+    Object.keys(expectedCaptures).forEach(function(idx) {
+	this.deepEqual(expectedCaptures[idx], captures[0][idx],
+		       util.format('Expected: %s, Got: %s',
+				   JSON.stringify(expectedCaptures[idx]),
+				   JSON.stringify(captures[0][idx])
+				  )
+		      );
+    }.bind(this));
+    this.done();
+}
+
 exports.testLongExpression = function(test) {
     var str = "aabcbcbcaaabcb";
     testMatches.apply(test, [ "^x[0-3]*|(a|(bc))*",
@@ -83,4 +99,14 @@ exports.testURL = function(test) {
     var exp = "^https?://[^/]+(/(.*))?"
     var str = "https://ddg.gg/search/?q=regular%20expressions";
     testMatches.apply(test, [ exp, str, _.range(8, 46)]);
+};
+
+exports.testURLMatch = function(test) {
+    var exp = "^https?://([^/]+)(/(.*))?"
+    var str = "https://ddg.gg/search/?q=regular%20expressions";
+    var captures = [ { start: -1, end: str.length-1 },
+		     { start: 7, end: 13 },
+		     { start: 13, end: str.length-1 }
+		   ];
+    testMatch.apply(test, [ exp, str, captures ]);
 };

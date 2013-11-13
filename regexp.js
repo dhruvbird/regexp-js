@@ -901,17 +901,18 @@ CaptureRange.prototype = {
     }
 }
 function leftmostLongest(cr1, cr2) {
-    if (cr1.lb == cr2.lb) {
-        if (cr2.ub > cr1.ub) {
+    // console.log("COMPARING:", cr1, cr2);
+    if (cr1.start == cr2.start) {
+        if (cr2.end > cr1.end) {
             return 2;
         } else {
             return 1;
         }
     } else {
-        if (cr1.lb < cr2.lb) {
-            return 1;
-        } else {
+        if (cr2.end < cr1.end) {
             return 2;
+        } else {
+            return 1;
         }
     }
 }
@@ -980,8 +981,11 @@ function addCaptures(captures, addedNodes, strIndex, flags) {
             captures.push(cloneCaptures(node.captures));
         } else {
             if ((captures.length > 0 &&
-                 (leftmostLongest(captures[0], node.captures[0]) == 2)) ||
+                 (leftmostLongest(captures[0][0], node.captures[0]) == 2)) ||
                 (captures.length === 0)) {
+                if (captures.length > 0) {
+                    // console.log("Existing captures:", captures);
+                }
                 // console.log("Before cloning. Captures:", node.captures);
                 captures[0] = cloneCaptures(node.captures);
             }
