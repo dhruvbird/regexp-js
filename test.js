@@ -33,6 +33,7 @@ function testMatch(expression, str, expectedCaptures) {
     var nfa = nfaGenerator.toNFA();
     var flags = 0;
     var captures = re.search(str, nfa, flags);
+    this.equals(captures.length, 1);
     Object.keys(expectedCaptures).forEach(function(idx) {
 	this.deepEqual(expectedCaptures[idx], captures[0][idx],
 		       util.format('Expected: %s, Got: %s',
@@ -108,5 +109,12 @@ exports.testURLMatch = function(test) {
 		     { start: 7, end: 13 },
 		     { start: 13, end: str.length-1 }
 		   ];
+    testMatch.apply(test, [ exp, str, captures ]);
+};
+
+exports.testBanaMatch = function(test) {
+    var exp = "ba(na)+"
+    var str = "abcdbanbabababananananart";
+    var captures = [ { start: 12, end: str.length-3 } ];
     testMatch.apply(test, [ exp, str, captures ]);
 };
