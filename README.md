@@ -63,6 +63,6 @@ while (data) {
 ```
 This can be accomplished entirely by making changes to the string searching/matching code by always saving the state that the NFA/DFA is currently in and continuing the match from where we left off last.
   * In case of the NFA matcher, we need to keep track of all the states in the queue when we processed the last character of input.
-  * In case of the DFA matcher, we need only track the last that that our FSA was in when we matched the last character of input.
+  * In case of the DFA matcher, we need only track the last state that our FSA was in when we matched the last character of input.
 
-This is an [example of a streaming regexp matching library](https://github.com/agentzh/sregex) written in C.
+Here is an [example of a streaming regexp matching library](https://github.com/agentzh/sregex) written in C that performs streaming regular expression matching.
