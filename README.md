@@ -28,6 +28,8 @@ sudo apt-get install graphviz # To run visualize.js
 
 ## Exercises
 
+To solve one of the exercises below, you will need to checkout the branch tagged [vanilla](https://github.com/dhruvbird/regexp-js/tree/vanilla)
+
 1. Add support for character escapes ```\w \W \0 \d and \D``` as mentioned on [this page](http://www.javascriptkit.com/javatutors/redev2.shtml). Requires you to make minor changes to:
   * The parsing code (function ```singleEscapedChar```)
   * The AST generation code (function ```EscapedChar```)
