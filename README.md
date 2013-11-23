@@ -26,6 +26,8 @@ npm install .
 sudo apt-get install graphviz # To run visualize.js
 ```
 
+## [Complexity of operations](complexity.md)
+
 ## Exercises
 
 To solve one of the exercises below, you will need to checkout the branch tagged [vanilla](https://github.com/dhruvbird/regexp-js/tree/vanilla)
